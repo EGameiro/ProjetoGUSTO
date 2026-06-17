@@ -61,6 +61,10 @@ async def extrair_pedido(texto: str) -> dict:
                 return vazio
             data = resp.json()
             raw = data["content"][0]["text"].strip()
+            # remove markdown code fences se o modelo as incluir
+            if raw.startswith("```"):
+                raw = raw.split("```", 2)[-1] if raw.count("```") >= 2 else raw
+                raw = raw.lstrip("json").strip().rstrip("```").strip()
             log.info(f"Extrator raw: {raw}")
             resultado = json.loads(raw)
             # normaliza tamanho para title case
