@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 import config
 from db.connection import get_pool, close_pool
 from services.redis_client import get_redis, close_redis
-from services.uazapi import registrar_webhook, normalizar_payload
+from services.uazapi import normalizar_payload
 from handlers.classifier import classificar
 from handlers import individual, convenio
 
