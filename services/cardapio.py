@@ -68,10 +68,10 @@ def formatar_cardapio() -> str:
         linhas.append(f"• {a}")
 
     linhas.append("\n*Tamanhos e valores:*")
-    linhas.append(f"• Mini — R$ {PRECOS['Mini']:.2f}")
-    linhas.append(f"• Normal — R$ {PRECOS['Normal']:.2f}")
-    linhas.append(f"• Executiva — R$ {PRECOS['Executiva']:.2f}")
-    linhas.append(f"• Churrasco — R$ {PRECOS['Churrasco']:.2f}")
+    linhas.append(f"• Mini — R$ {PRECOS['Mini']:.2f}".replace(".", ",")")
+    linhas.append(f"• Normal — R$ {PRECOS['Normal']:.2f}".replace(".", ",")")
+    linhas.append(f"• Executiva — R$ {PRECOS['Executiva']:.2f}".replace(".", ",")")
+    linhas.append(f"• Churrasco — R$ {PRECOS['Churrasco']:.2f}".replace(".", ",")")
 
     linhas.append("\n_Vila Branca: entrega grátis_ 🛵")
 

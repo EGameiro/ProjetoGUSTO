@@ -64,10 +64,10 @@ async def _receber_mistura(numero: str, sessao: dict, texto: str):
     await enviar_texto(
         numero,
         "Qual tamanho?\n\n"
-        f"• *Mini* — R$ {PRECOS['Mini']:.2f}\n"
-        f"• *Normal* — R$ {PRECOS['Normal']:.2f}\n"
-        f"• *Executiva* — R$ {PRECOS['Executiva']:.2f}\n"
-        f"• *Churrasco* — R$ {PRECOS['Churrasco']:.2f}"
+        f"• *Mini* — R$ {PRECOS['Mini']:.2f}".replace(".", ",")\n"
+        f"• *Normal* — R$ {PRECOS['Normal']:.2f}".replace(".", ",")\n"
+        f"• *Executiva* — R$ {PRECOS['Executiva']:.2f}".replace(".", ",")\n"
+        f"• *Churrasco* — R$ {PRECOS['Churrasco']:.2f}".replace(".", ",")"
     )
 
 
@@ -194,7 +194,7 @@ async def _enviar_resumo(numero: str, sessao: dict):
         f"📋 *Resumo do pedido:*\n\n"
         f"🍽️ {sessao.get('mistura')} — {sessao.get('tamanho')}\n"
         f"🥗 {acomps_texto}\n"
-        f"💰 R$ {sessao.get('valor_unitario', 0):.2f}"
+        f"💰 R$ {sessao.get('valor_unitario', 0):.2f}".replace(".", ",")"
         f"{obs}\n\n"
         f"🏠 {entrega}\n\n"
         f"*Confirma?* Responda *sim* ou *não*."
