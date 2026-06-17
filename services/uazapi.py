@@ -11,7 +11,10 @@ _BASE = f"{config.UAZAPI_BASE_URL}/{config.UAZAPI_INSTANCE}"
 
 
 async def enviar_texto(numero: str, mensagem: str) -> dict:
-    """Envia mensagem de texto para um número WhatsApp."""
+    """
+    Envia mensagem de texto para um número WhatsApp.
+    numero: apenas dígitos, ex: '5511992846459'
+    """
     url = f"{_BASE}/send/text"
     payload = {
         "number": numero,
@@ -43,59 +46,57 @@ async def registrar_webhook(webhook_url: str) -> dict:
 def normalizar_payload(payload: dict) -> dict | None:
     """
     Extrai os campos relevantes do payload bruto do UAZAPI.
-    Retorna None se for mensagem do próprio bot (fromMe) ou tipo não suportado.
+    Retorna None se for mensagem do próprio bot (fromMe), grupo ou tipo não suportado.
 
-    Estrutura esperada do UAZAPI:
+    Estrutura real do UAZAPI:
     {
-      "type": "message",
-      "data": {
-        "key": { "remoteJid": "5512999999999@s.whatsapp.net", "fromMe": false },
-        "message": {
-          "conversation": "texto da mensagem",
-          "imageMessage": { "url": "...", "caption": "..." },
-          "audioMessage": { "url": "..." }
-        },
-        "messageType": "conversation" | "imageMessage" | "audioMessage"
+      "EventType": "messages",
+      "message": {
+        "fromMe": false,
+        "isGroup": false,
+        "type": "text",
+        "text": "ola",
+        "content": "ola",
+        "sender_pn": "5511992846459@s.whatsapp.net",
+        "mediaType": ""
       }
     }
     """
-    if payload.get("type") != "message":
+    if payload.get("EventType") != "messages":
         return None
 
-    data = payload.get("data", {})
-    key  = data.get("key", {})
+    msg = payload.get("message", {})
 
-    if key.get("fromMe"):
+    if msg.get("fromMe"):
         return None
 
-    jid    = key.get("remoteJid", "")
-    numero = jid.replace("@s.whatsapp.net", "").replace("@g.us", "")
+    if msg.get("isGroup"):
+        return None
 
-    if "@g.us" in jid:
-        return None  # ignora grupos
+    msg_type = msg.get("type", "").lower()       # "text", "image", "audio", etc.
+    jid      = msg.get("sender_pn", "")
+    numero   = jid.replace("@s.whatsapp.net", "").replace("@g.us", "")
 
-    msg_type = data.get("messageType", "")
-    message  = data.get("message", {})
+    if not numero:
+        return None
 
     texto     = None
     url_midia = None
 
-    if msg_type == "conversation":
-        texto = message.get("conversation", "").strip()
-    elif msg_type == "extendedTextMessage":
-        texto = message.get("extendedTextMessage", {}).get("text", "").strip()
-    elif msg_type == "imageMessage":
-        texto     = message.get("imageMessage", {}).get("caption", "").strip()
-        url_midia = message.get("imageMessage", {}).get("url")
-    elif msg_type == "audioMessage":
-        url_midia = message.get("audioMessage", {}).get("url")
+    if msg_type == "text":
+        texto = (msg.get("text") or msg.get("content") or "").strip()
+    elif msg_type == "image":
+        texto     = (msg.get("text") or msg.get("content") or "").strip()
+        url_midia = msg.get("mediaUrl") or msg.get("url")
+    elif msg_type == "audio":
+        url_midia = msg.get("mediaUrl") or msg.get("url")
     else:
-        return None  # tipo não tratado (sticker, documento, etc.)
+        return None  # sticker, documento, reação, etc.
 
     return {
         "numero":     numero,
-        "tipo_midia": "imagem" if msg_type == "imageMessage" else
-                      "audio"  if msg_type == "audioMessage"  else "texto",
+        "tipo_midia": "imagem" if msg_type == "image" else
+                      "audio"  if msg_type == "audio" else "texto",
         "texto":      texto,
         "url_midia":  url_midia,
     }
