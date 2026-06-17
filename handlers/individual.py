@@ -2,6 +2,7 @@ import logging
 from services import session as sess
 from services.uazapi import enviar_texto
 from services.cardapio import formatar_cardapio, get_acompanhamentos_hoje, PRECOS
+from services.extrator import extrair_pedido
 from db.pedidos import salvar_pedido_individual
 
 log = logging.getLogger(__name__)
@@ -61,18 +62,82 @@ async def _receber_mistura(numero: str, sessao: dict, texto: str):
         await enviar_texto(numero, "Por favor, me diga qual prato você escolheu.")
         return
 
-    sessao["mistura"] = texto.title()
-    sessao["etapa"]   = "aguardando_tamanho"
-    await sess.set_session(numero, sessao)
+    # Tenta extrair tudo de uma vez se o usuário mandou frase completa
+    extraido = await extrair_pedido(texto)
 
-    await enviar_texto(
-        numero,
-        "Qual tamanho?\n\n"
-        f"• *Mini* — {brl(PRECOS['Mini'])}\n"
-        f"• *Normal* — {brl(PRECOS['Normal'])}\n"
-        f"• *Executiva* — {brl(PRECOS['Executiva'])}\n"
-        f"• *Churrasco* — {brl(PRECOS['Churrasco'])}"
-    )
+    # Preenche sessão com o que foi extraído
+    if extraido.get("mistura"):
+        sessao["mistura"] = extraido["mistura"].title()
+    else:
+        sessao["mistura"] = texto.title()
+
+    # Tamanho
+    tamanho = extraido.get("tamanho")
+    if tamanho and tamanho in PRECOS:
+        sessao["tamanho"]        = tamanho
+        sessao["valor_unitario"] = PRECOS[tamanho]
+
+    # Acompanhamentos
+    if extraido.get("acomp_1"):
+        sessao["acomp_1"] = extraido["acomp_1"]
+    if extraido.get("acomp_2"):
+        sessao["acomp_2"] = extraido["acomp_2"]
+
+    # Observações (marca a chave mesmo que null, para não perguntar de novo)
+    if "observacoes" in extraido:
+        sessao["observacoes"] = extraido["observacoes"]
+
+    # Entrega / retirada
+    if extraido.get("tipo_entrega"):
+        sessao["tipo_entrega"] = extraido["tipo_entrega"]
+        if extraido.get("endereco"):
+            sessao["endereco"] = extraido["endereco"]
+        if extraido.get("hora_retirada"):
+            sessao["hora_retirada"] = extraido["hora_retirada"]
+
+    # Determina próxima etapa com base no que já foi preenchido
+    if not sessao.get("tamanho"):
+        sessao["etapa"] = "aguardando_tamanho"
+        await sess.set_session(numero, sessao)
+        await enviar_texto(
+            numero,
+            "Qual tamanho?\n\n"
+            f"• *Mini* — {brl(PRECOS['Mini'])}\n"
+            f"• *Normal* — {brl(PRECOS['Normal'])}\n"
+            f"• *Executiva* — {brl(PRECOS['Executiva'])}\n"
+            f"• *Churrasco* — {brl(PRECOS['Churrasco'])}"
+        )
+    elif not sessao.get("acomp_1"):
+        sessao["etapa"] = "aguardando_acomp"
+        await sess.set_session(numero, sessao)
+        acomps = get_acompanhamentos_hoje()
+        lista  = "\n".join(f"• {a.title()}" for a in acomps)
+        await enviar_texto(
+            numero,
+            f"Escolha até 2 acompanhamentos:\n\n{lista}\n\n"
+            "_Separe por vírgula se quiser 2. Ex: Fritas, Farofa_"
+        )
+    elif "observacoes" not in sessao:
+        sessao["etapa"] = "aguardando_obs"
+        await sess.set_session(numero, sessao)
+        await enviar_texto(
+            numero,
+            "Alguma observação? (ex: sem feijão, frango bem passado)\n\n"
+            "_Ou responda *não* para continuar._"
+        )
+    elif not sessao.get("tipo_entrega"):
+        sessao["etapa"] = "aguardando_entrega"
+        await sess.set_session(numero, sessao)
+        await enviar_texto(
+            numero,
+            "Entrega ou retirada?\n\n"
+            "• Se *entrega*, me mande o endereço completo.\n"
+            "• Se *retirada*, responda _retirada_."
+        )
+    else:
+        sessao["etapa"] = "aguardando_confirmacao"
+        await sess.set_session(numero, sessao)
+        await _enviar_resumo(numero, sessao)
 
 
 async def _receber_tamanho(numero: str, sessao: dict, texto: str):
