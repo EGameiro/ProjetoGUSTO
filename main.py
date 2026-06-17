@@ -58,7 +58,7 @@ async def webhook(request: Request):
     except Exception:
         return JSONResponse({"status": "ok"})  # retorna 200 mesmo com payload inválido
 
-    log.info(f"Webhook recebido: {payload}")
+    log.debug(f"Webhook recebido: {payload}")
 
     msg = normalizar_payload(payload)
     if msg is None:
