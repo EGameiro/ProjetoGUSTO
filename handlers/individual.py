@@ -9,6 +9,10 @@ log = logging.getLogger(__name__)
 TAMANHOS = ["mini", "normal", "executiva", "churrasco"]
 
 
+def brl(valor: float) -> str:
+    return f"R$ {valor:.2f}".replace(".", ",")
+
+
 async def processar(msg: dict):
     numero = msg["numero"]
     texto  = (msg["texto"] or "").strip()
@@ -64,10 +68,10 @@ async def _receber_mistura(numero: str, sessao: dict, texto: str):
     await enviar_texto(
         numero,
         "Qual tamanho?\n\n"
-        f"• *Mini* — R$ {PRECOS['Mini']:.2f}".replace(".", ",")\n"
-        f"• *Normal* — R$ {PRECOS['Normal']:.2f}".replace(".", ",")\n"
-        f"• *Executiva* — R$ {PRECOS['Executiva']:.2f}".replace(".", ",")\n"
-        f"• *Churrasco* — R$ {PRECOS['Churrasco']:.2f}".replace(".", ",")"
+        f"• *Mini* — {brl(PRECOS['Mini'])}\n"
+        f"• *Normal* — {brl(PRECOS['Normal'])}\n"
+        f"• *Executiva* — {brl(PRECOS['Executiva'])}\n"
+        f"• *Churrasco* — {brl(PRECOS['Churrasco'])}"
     )
 
 
@@ -194,7 +198,7 @@ async def _enviar_resumo(numero: str, sessao: dict):
         f"📋 *Resumo do pedido:*\n\n"
         f"🍽️ {sessao.get('mistura')} — {sessao.get('tamanho')}\n"
         f"🥗 {acomps_texto}\n"
-        f"💰 R$ {sessao.get('valor_unitario', 0):.2f}".replace(".", ",")"
+        f"💰 {brl(sessao.get('valor_unitario', 0))}"
         f"{obs}\n\n"
         f"🏠 {entrega}\n\n"
         f"*Confirma?* Responda *sim* ou *não*."
