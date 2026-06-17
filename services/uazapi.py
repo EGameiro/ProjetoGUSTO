@@ -1,5 +1,8 @@
+import logging
 import httpx
 import config
+
+log = logging.getLogger(__name__)
 
 # Headers padrão para todas as chamadas ao UAZAPI
 _HEADERS = {
@@ -22,24 +25,9 @@ async def enviar_texto(numero: str, mensagem: str) -> dict:
     }
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(url, json=payload, headers=_HEADERS)
-        resp.raise_for_status()
-        return resp.json()
-
-
-async def registrar_webhook(webhook_url: str) -> dict:
-    """
-    Registra a URL do webhook no UAZAPI.
-    OBRIGATÓRIO — sem essa chamada o UAZAPI não sabe para onde enviar
-    as mensagens recebidas e elas nunca chegam ao servidor.
-    """
-    url = f"{_BASE}/webhook"
-    payload = {
-        "url": webhook_url,
-        "enabled": True,
-    }
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(url, json=payload, headers=_HEADERS)
-        resp.raise_for_status()
+        if not resp.is_success:
+            log.error(f"Erro ao enviar mensagem [{resp.status_code}]: {resp.text}")
+            return {}
         return resp.json()
 
 
@@ -47,20 +35,6 @@ def normalizar_payload(payload: dict) -> dict | None:
     """
     Extrai os campos relevantes do payload bruto do UAZAPI.
     Retorna None se for mensagem do próprio bot (fromMe), grupo ou tipo não suportado.
-
-    Estrutura real do UAZAPI:
-    {
-      "EventType": "messages",
-      "message": {
-        "fromMe": false,
-        "isGroup": false,
-        "type": "text",
-        "text": "ola",
-        "content": "ola",
-        "sender_pn": "5511992846459@s.whatsapp.net",
-        "mediaType": ""
-      }
-    }
     """
     if payload.get("EventType") != "messages":
         return None
@@ -73,7 +47,7 @@ def normalizar_payload(payload: dict) -> dict | None:
     if msg.get("isGroup"):
         return None
 
-    msg_type = msg.get("type", "").lower()       # "text", "image", "audio", etc.
+    msg_type = msg.get("type", "").lower()
     jid      = msg.get("sender_pn", "")
     numero   = jid.replace("@s.whatsapp.net", "").replace("@g.us", "")
 
@@ -91,7 +65,7 @@ def normalizar_payload(payload: dict) -> dict | None:
     elif msg_type == "audio":
         url_midia = msg.get("mediaUrl") or msg.get("url")
     else:
-        return None  # sticker, documento, reação, etc.
+        return None
 
     return {
         "numero":     numero,
