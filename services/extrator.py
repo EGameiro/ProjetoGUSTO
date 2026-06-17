@@ -61,6 +61,7 @@ async def extrair_pedido(texto: str) -> dict:
                 return vazio
             data = resp.json()
             raw = data["content"][0]["text"].strip()
+            log.info(f"Extrator raw: {raw}")
             resultado = json.loads(raw)
             # normaliza tamanho para title case
             if resultado.get("tamanho"):
@@ -71,5 +72,5 @@ async def extrair_pedido(texto: str) -> dict:
                     resultado[campo] = resultado[campo].strip().title()
             return {**vazio, **resultado}
     except Exception as e:
-        log.warning(f"Extrator: falha ao extrair pedido — {e}")
+        log.warning(f"Extrator: falha ao extrair pedido — {type(e).__name__}: {e}")
         return vazio

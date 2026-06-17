@@ -7,8 +7,6 @@ from db.pedidos import salvar_pedido_individual
 
 log = logging.getLogger(__name__)
 
-TAMANHOS = ["mini", "normal", "executiva", "churrasco"]
-
 
 def brl(valor: float) -> str:
     return f"R$ {valor:.2f}".replace(".", ",")
@@ -24,25 +22,10 @@ async def processar(msg: dict):
     log.info(f"[{numero}] etapa={etapa} | texto={texto!r}")
 
     if etapa == "inicio":
-        await _inicio(numero, sessao)
+        await _inicio(numero)
 
-    elif etapa == "aguardando_mistura":
-        await _receber_mistura(numero, sessao, texto)
-
-    elif etapa == "aguardando_tamanho":
-        await _receber_tamanho(numero, sessao, texto)
-
-    elif etapa == "aguardando_acomp":
-        await _receber_acomp(numero, sessao, texto)
-
-    elif etapa == "aguardando_obs":
-        await _receber_obs(numero, sessao, texto)
-
-    elif etapa == "aguardando_entrega":
-        await _receber_entrega(numero, sessao, texto)
-
-    elif etapa == "aguardando_horario":
-        await _receber_horario(numero, sessao, texto)
+    elif etapa == "coletando":
+        await _coletando(numero, sessao, texto)
 
     elif etapa == "aguardando_confirmacao":
         await _receber_confirmacao(numero, sessao, texto)
@@ -50,172 +33,35 @@ async def processar(msg: dict):
 
 # ── Etapas ────────────────────────────────────────────────────────────────────
 
-async def _inicio(numero: str, sessao: dict):
+async def _inicio(numero: str):
     cardapio = formatar_cardapio()
     await enviar_texto(numero, f"Olá! Bem-vindo ao *GUSTO* 🍽️\n\n{cardapio}")
     await enviar_texto(numero, "Qual prato você vai querer hoje?")
-    await sess.set_session(numero, {"etapa": "aguardando_mistura"})
+    await sess.set_session(numero, {"etapa": "coletando"})
 
 
-async def _receber_mistura(numero: str, sessao: dict, texto: str):
-    if not texto:
-        await enviar_texto(numero, "Por favor, me diga qual prato você escolheu.")
-        return
-
-    # Tenta extrair tudo de uma vez se o usuário mandou frase completa
+async def _coletando(numero: str, sessao: dict, texto: str):
+    """
+    A cada mensagem: extrai dados, mescla com sessão, pergunta só o que falta.
+    """
+    # Extrai campos da mensagem atual
     extraido = await extrair_pedido(texto)
+    log.info(f"[{numero}] extraido={extraido}")
 
-    # Preenche sessão com o que foi extraído
-    if extraido.get("mistura"):
-        sessao["mistura"] = extraido["mistura"].title()
-    else:
-        sessao["mistura"] = texto.title()
+    # Mescla na sessão (nunca sobrescreve com None o que já estava preenchido)
+    _mesclar(sessao, extraido)
 
-    # Tamanho
-    tamanho = extraido.get("tamanho")
-    if tamanho and tamanho in PRECOS:
-        sessao["tamanho"]        = tamanho
-        sessao["valor_unitario"] = PRECOS[tamanho]
+    # Verifica o que falta
+    faltando = _campos_faltando(sessao)
 
-    # Acompanhamentos
-    if extraido.get("acomp_1"):
-        sessao["acomp_1"] = extraido["acomp_1"]
-    if extraido.get("acomp_2"):
-        sessao["acomp_2"] = extraido["acomp_2"]
-
-    # Observações (marca a chave mesmo que null, para não perguntar de novo)
-    if "observacoes" in extraido:
-        sessao["observacoes"] = extraido["observacoes"]
-
-    # Entrega / retirada
-    if extraido.get("tipo_entrega"):
-        sessao["tipo_entrega"] = extraido["tipo_entrega"]
-        if extraido.get("endereco"):
-            sessao["endereco"] = extraido["endereco"]
-        if extraido.get("hora_retirada"):
-            sessao["hora_retirada"] = extraido["hora_retirada"]
-
-    # Determina próxima etapa com base no que já foi preenchido
-    if not sessao.get("tamanho"):
-        sessao["etapa"] = "aguardando_tamanho"
+    if faltando:
+        sessao["etapa"] = "coletando"
         await sess.set_session(numero, sessao)
-        await enviar_texto(
-            numero,
-            "Qual tamanho?\n\n"
-            f"• *Mini* — {brl(PRECOS['Mini'])}\n"
-            f"• *Normal* — {brl(PRECOS['Normal'])}\n"
-            f"• *Executiva* — {brl(PRECOS['Executiva'])}\n"
-            f"• *Churrasco* — {brl(PRECOS['Churrasco'])}"
-        )
-    elif not sessao.get("acomp_1"):
-        sessao["etapa"] = "aguardando_acomp"
-        await sess.set_session(numero, sessao)
-        acomps = get_acompanhamentos_hoje()
-        lista  = "\n".join(f"• {a.title()}" for a in acomps)
-        await enviar_texto(
-            numero,
-            f"Escolha até 2 acompanhamentos:\n\n{lista}\n\n"
-            "_Separe por vírgula se quiser 2. Ex: Fritas, Farofa_"
-        )
-    elif "observacoes" not in sessao:
-        sessao["etapa"] = "aguardando_obs"
-        await sess.set_session(numero, sessao)
-        await enviar_texto(
-            numero,
-            "Alguma observação? (ex: sem feijão, frango bem passado)\n\n"
-            "_Ou responda *não* para continuar._"
-        )
-    elif not sessao.get("tipo_entrega"):
-        sessao["etapa"] = "aguardando_entrega"
-        await sess.set_session(numero, sessao)
-        await enviar_texto(
-            numero,
-            "Entrega ou retirada?\n\n"
-            "• Se *entrega*, me mande o endereço completo.\n"
-            "• Se *retirada*, responda _retirada_."
-        )
+        await enviar_texto(numero, _montar_pergunta_faltando(sessao, faltando))
     else:
         sessao["etapa"] = "aguardando_confirmacao"
         await sess.set_session(numero, sessao)
         await _enviar_resumo(numero, sessao)
-
-
-async def _receber_tamanho(numero: str, sessao: dict, texto: str):
-    entrada = texto.strip().lower()
-    tamanho = next((k for k in PRECOS if k.lower() == entrada), None)
-
-    if tamanho is None:
-        await enviar_texto(
-            numero,
-            "Tamanho inválido. Escolha:\n• Mini\n• Normal\n• Executiva\n• Churrasco"
-        )
-        return
-
-    sessao["tamanho"]        = tamanho
-    sessao["valor_unitario"] = PRECOS[tamanho]
-    sessao["etapa"]         = "aguardando_acomp"
-    await sess.set_session(numero, sessao)
-
-    acomps = get_acompanhamentos_hoje()
-    lista  = "\n".join(f"• {a.title()}" for a in acomps)
-    await enviar_texto(
-        numero,
-        f"Escolha até 2 acompanhamentos:\n\n{lista}\n\n"
-        "_Separe por vírgula se quiser 2. Ex: Fritas, Farofa_"
-    )
-
-
-async def _receber_acomp(numero: str, sessao: dict, texto: str):
-    partes  = [p.strip().title() for p in texto.split(",") if p.strip()]
-    acomp_1 = partes[0] if len(partes) > 0 else None
-    acomp_2 = partes[1] if len(partes) > 1 else None
-
-    sessao["acomp_1"] = acomp_1
-    sessao["acomp_2"] = acomp_2
-    sessao["etapa"]   = "aguardando_obs"
-    await sess.set_session(numero, sessao)
-
-    await enviar_texto(
-        numero,
-        "Alguma observação? (ex: sem feijão, frango bem passado)\n\n"
-        "_Ou responda *não* para continuar._"
-    )
-
-
-async def _receber_obs(numero: str, sessao: dict, texto: str):
-    nao = texto.lower() in ["não", "nao", "n", "nenhuma", "nenhuma observacao", "nenhuma observação"]
-    sessao["observacoes"] = None if nao else texto
-    sessao["etapa"]       = "aguardando_entrega"
-    await sess.set_session(numero, sessao)
-
-    await enviar_texto(
-        numero,
-        "Entrega ou retirada?\n\n"
-        "• Se *entrega*, me mande o endereço completo.\n"
-        "• Se *retirada*, responda _retirada_."
-    )
-
-
-async def _receber_entrega(numero: str, sessao: dict, texto: str):
-    if texto.lower() in ["retirada", "vou buscar", "buscar", "pegar"]:
-        sessao["tipo_entrega"] = "retirada"
-        sessao["endereco"]     = None
-        sessao["etapa"]        = "aguardando_horario"
-        await sess.set_session(numero, sessao)
-        await enviar_texto(numero, "Que horas você busca? (ex: 12h, 12:30)")
-    else:
-        sessao["tipo_entrega"] = "entrega"
-        sessao["endereco"]     = texto
-        sessao["etapa"]        = "aguardando_confirmacao"
-        await sess.set_session(numero, sessao)
-        await _enviar_resumo(numero, sessao)
-
-
-async def _receber_horario(numero: str, sessao: dict, texto: str):
-    sessao["hora_retirada"] = texto
-    sessao["etapa"]         = "aguardando_confirmacao"
-    await sess.set_session(numero, sessao)
-    await _enviar_resumo(numero, sessao)
 
 
 async def _receber_confirmacao(numero: str, sessao: dict, texto: str):
@@ -225,9 +71,9 @@ async def _receber_confirmacao(numero: str, sessao: dict, texto: str):
             await sess.delete_session(numero)
             await enviar_texto(
                 numero,
-                f"✅ *Pedido anotado!* 😉\n\n"
+                f"Pedido anotado! 😉\n\n"
                 f"Número do pedido: *#{pedido_id}*\n"
-                f"Tempo estimado: 35 a 50 min 🛵"
+                f"Tempo estimado: 35 a 50 min"
             )
             log.info(f"[{numero}] Pedido #{pedido_id} salvo com sucesso")
         except Exception as e:
@@ -236,10 +82,81 @@ async def _receber_confirmacao(numero: str, sessao: dict, texto: str):
 
     elif texto.lower() in ["não", "nao", "n", "cancelar", "cancela"]:
         await sess.delete_session(numero)
-        await enviar_texto(numero, "Pedido cancelado. Quando quiser, é só chamar! 😊")
+        await enviar_texto(numero, "Pedido cancelado. Quando quiser, é só chamar!")
 
     else:
         await _enviar_resumo(numero, sessao)
+
+
+# ── Lógica de campos faltando ─────────────────────────────────────────────────
+
+def _mesclar(sessao: dict, extraido: dict):
+    """Copia do extraido para sessao, sem sobrescrever campos já preenchidos com None."""
+    campos = ["mistura", "tamanho", "acomp_1", "acomp_2",
+              "observacoes", "tipo_entrega", "endereco", "hora_retirada"]
+    for campo in campos:
+        valor = extraido.get(campo)
+        if valor is not None and not sessao.get(campo):
+            sessao[campo] = valor
+
+    # normaliza tamanho para title case e valida
+    if sessao.get("tamanho"):
+        t = sessao["tamanho"].strip().title()
+        if t in PRECOS:
+            sessao["tamanho"]        = t
+            sessao["valor_unitario"] = PRECOS[t]
+        else:
+            sessao.pop("tamanho", None)
+            sessao.pop("valor_unitario", None)
+
+    # se mistura ainda não está e texto é simples, usa o texto direto
+    # (tratado em _coletando)
+
+
+def _campos_faltando(sessao: dict) -> list:
+    faltando = []
+
+    if not sessao.get("mistura"):
+        faltando.append("mistura")
+
+    if not sessao.get("tamanho"):
+        faltando.append("tamanho")
+
+    if not sessao.get("acomp_1"):
+        faltando.append("acomp")
+
+    tipo = sessao.get("tipo_entrega")
+    if not tipo:
+        faltando.append("entrega")
+    elif tipo == "entrega" and not sessao.get("endereco"):
+        faltando.append("endereco")
+    elif tipo == "retirada" and not sessao.get("hora_retirada"):
+        faltando.append("horario")
+
+    return faltando
+
+
+def _montar_pergunta_faltando(sessao: dict, faltando: list) -> str:
+    partes = ["Ainda preciso de algumas informações:\n"]
+
+    for campo in faltando:
+        if campo == "mistura":
+            partes.append("• *Qual prato* você quer?")
+        elif campo == "tamanho":
+            opcoes = " | ".join(f"{k} ({brl(v)})" for k, v in PRECOS.items())
+            partes.append(f"• *Tamanho:* {opcoes}")
+        elif campo == "acomp":
+            acomps = get_acompanhamentos_hoje()
+            lista  = ", ".join(a.title() for a in acomps)
+            partes.append(f"• *Acompanhamentos* (até 2): {lista}")
+        elif campo == "entrega":
+            partes.append("• *Entrega ou retirada?*\n  Se entrega, informe o endereço.\n  Se retirada, informe o horário.")
+        elif campo == "endereco":
+            partes.append("• *Endereço* de entrega?")
+        elif campo == "horario":
+            partes.append("• *Que horas* você busca?")
+
+    return "\n".join(partes)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -253,20 +170,20 @@ async def _enviar_resumo(numero: str, sessao: dict):
     acomps_texto = " + ".join(acomps) if acomps else "Nenhum"
 
     entrega = (
-        f"Retirada às {sessao.get('hora_retirada')}"
+        f"Retirada as {sessao.get('hora_retirada')}"
         if sessao.get("tipo_entrega") == "retirada"
         else f"Entrega em: {sessao.get('endereco')}"
     )
 
-    obs = f"\n⚠️ Obs: {sessao['observacoes']}" if sessao.get("observacoes") else ""
+    obs = f"\nObs: {sessao['observacoes']}" if sessao.get("observacoes") else ""
 
     resumo = (
-        f"📋 *Resumo do pedido:*\n\n"
-        f"🍽️ {sessao.get('mistura')} — {sessao.get('tamanho')}\n"
-        f"🥗 {acomps_texto}\n"
-        f"💰 {brl(sessao.get('valor_unitario', 0))}"
+        f"*Resumo do pedido:*\n\n"
+        f"Prato: {sessao.get('mistura')} — {sessao.get('tamanho')}\n"
+        f"Acompanhamentos: {acomps_texto}\n"
+        f"Valor: {brl(sessao.get('valor_unitario', 0))}"
         f"{obs}\n\n"
-        f"🏠 {entrega}\n\n"
+        f"{entrega}\n\n"
         f"*Confirma?* Responda *sim* ou *não*."
     )
 
