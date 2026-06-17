@@ -17,8 +17,9 @@ async def enviar_texto(numero: str, mensagem: str) -> dict:
     """
     Envia mensagem de texto para um número WhatsApp.
     numero: apenas dígitos, ex: '5511992846459'
+    O endpoint de envio não usa a instância na URL.
     """
-    url = f"{_BASE}/send/text"
+    url = f"{config.UAZAPI_BASE_URL}/send/text"
     payload = {
         "number": numero,
         "text": mensagem,
