@@ -76,16 +76,17 @@ async def _receber_mistura(numero: str, sessao: dict, texto: str):
 
 
 async def _receber_tamanho(numero: str, sessao: dict, texto: str):
-    tamanho = texto.strip().title()
+    entrada = texto.strip().lower()
+    tamanho = next((k for k in PRECOS if k.lower() == entrada), None)
 
-    if tamanho.lower() not in TAMANHOS:
+    if tamanho is None:
         await enviar_texto(
             numero,
             "Tamanho inválido. Escolha:\n• Mini\n• Normal\n• Executiva\n• Churrasco"
         )
         return
 
-    sessao["tamanho"]       = tamanho
+    sessao["tamanho"]        = tamanho
     sessao["valor_unitario"] = PRECOS[tamanho]
     sessao["etapa"]         = "aguardando_acomp"
     await sess.set_session(numero, sessao)
