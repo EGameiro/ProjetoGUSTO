@@ -30,6 +30,12 @@ async def processar(msg: dict):
     elif etapa == "aguardando_confirmacao":
         await _receber_confirmacao(numero, sessao, texto)
 
+    else:
+        # Estado desconhecido (sessão antiga) — reinicia
+        log.warning(f"[{numero}] Estado desconhecido '{etapa}', reiniciando sessão")
+        await sess.delete_session(numero)
+        await _inicio(numero)
+
 
 # ── Etapas ────────────────────────────────────────────────────────────────────
 
