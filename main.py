@@ -32,16 +32,8 @@ async def lifespan(app: FastAPI):
     await r.ping()
     log.info("Redis: conexão OK")
 
-    # Registra webhook no UAZAPI
-    # OBRIGATÓRIO: sem isso o UAZAPI não envia mensagens para este servidor
-    if config.WEBHOOK_URL and config.UAZAPI_TOKEN:
-        try:
-            resultado = await registrar_webhook(config.WEBHOOK_URL)
-            log.info(f"UAZAPI webhook registrado: {resultado}")
-        except Exception as e:
-            log.error(f"Falha ao registrar webhook no UAZAPI: {e}")
-    else:
-        log.warning("WEBHOOK_URL ou UAZAPI_TOKEN não configurados — webhook NÃO registrado")
+    # Webhook configurado manualmente no painel do UAZAPI
+    log.info(f"Webhook endpoint disponível em: {config.WEBHOOK_URL}/webhook")
 
     yield
 
