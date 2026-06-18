@@ -1,0 +1,166 @@
+"""
+Windows Service — Impressão automática GUSTO
+============================================
+Faz polling no MySQL a cada INTERVALO_SEGUNDOS, imprime pedidos pendentes
+(impresso = 0) e marca impresso = 1.
+
+Dependências (instalar no ambiente do Windows Service):
+    pip install mysql-connector-python python-dotenv pywin32
+
+Uso:
+    python poller.py          # modo console (debug)
+    python poller.py install  # instalar como serviço Windows
+    python poller.py start    # iniciar serviço
+    python poller.py stop     # parar serviço
+    python poller.py remove   # remover serviço
+
+Configuração:
+    Copie .env.example para .env na mesma pasta e preencha as variáveis.
+    A impressora padrão do Windows é usada automaticamente;
+    defina NOME_IMPRESSORA para escolher outra.
+"""
+
+import os
+import sys
+import time
+import logging
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Adiciona o diretório-pai ao path para importar db.impressao e services.cupom
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from db.impressao import buscar_pendentes, marcar_impresso, buscar_nome_empresa
+from services.cupom import montar_cupom_individual, montar_cupom_convenio
+
+INTERVALO_SEGUNDOS = int(os.getenv("INTERVALO_IMPRESSAO", 15))
+NOME_IMPRESSORA    = os.getenv("NOME_IMPRESSORA", "")  # "" = impressora padrão
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler("gusto_impressao.log", encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
+)
+log = logging.getLogger("gusto.poller")
+
+
+# ── Impressão ────────────────────────────────────────────────────────────────
+
+def imprimir_texto(texto: str):
+    """Envia texto puro para a impressora via win32print."""
+    try:
+        import win32print
+        impressora = NOME_IMPRESSORA or win32print.GetDefaultPrinter()
+        hprinter = win32print.OpenPrinter(impressora)
+        try:
+            hjob = win32print.StartDocPrinter(hprinter, 1, ("Pedido GUSTO", None, "RAW"))
+            win32print.StartPagePrinter(hprinter)
+            # Adiciona alimentação de papel + corte
+            dados = (texto + "\n\n\n\x1b\x69").encode("cp850", errors="replace")
+            win32print.WritePrinter(hprinter, dados)
+            win32print.EndPagePrinter(hprinter)
+            win32print.EndDocPrinter(hprinter)
+        finally:
+            win32print.ClosePrinter(hprinter)
+    except ImportError:
+        # Modo debug: imprime no console
+        log.warning("win32print não encontrado — imprimindo no console")
+        print("\n" + "=" * 42)
+        print(texto)
+        print("=" * 42 + "\n")
+
+
+# ── Loop principal ───────────────────────────────────────────────────────────
+
+def processar_pendentes():
+    try:
+        pendentes = buscar_pendentes()
+    except Exception as e:
+        log.error(f"Erro ao buscar pendentes: {e}")
+        return
+
+    for entrada in pendentes:
+        pedido = entrada["pedido"]
+        itens  = entrada["itens"]
+        pid    = pedido["id"]
+        tipo   = pedido.get("tipo", "individual")
+
+        try:
+            if tipo == "convenio":
+                empresa_id   = pedido.get("empresa_id")
+                nome_empresa = buscar_nome_empresa(empresa_id) if empresa_id else "EMPRESA"
+                cupom = montar_cupom_convenio(pedido, itens, nome_empresa)
+            else:
+                cupom = montar_cupom_individual(pedido, itens)
+
+            log.info(f"Imprimindo pedido #{pid} ({tipo})")
+            imprimir_texto(cupom)
+            marcar_impresso(pid)
+            log.info(f"Pedido #{pid} marcado como impresso")
+
+        except Exception as e:
+            log.error(f"Erro ao processar pedido #{pid}: {e}")
+
+
+def loop_console():
+    log.info(f"GUSTO Poller iniciado (intervalo={INTERVALO_SEGUNDOS}s)")
+    while True:
+        processar_pendentes()
+        time.sleep(INTERVALO_SEGUNDOS)
+
+
+# ── Windows Service (pywin32) ────────────────────────────────────────────────
+
+try:
+    import win32serviceutil
+    import win32service
+    import win32event
+    import servicemanager
+
+    class GustoImpressaoService(win32serviceutil.ServiceFramework):
+        _svc_name_        = "GustoImpressao"
+        _svc_display_name_ = "GUSTO — Impressão Automática"
+        _svc_description_ = "Monitora pedidos do GUSTO e imprime automaticamente."
+
+        def __init__(self, args):
+            win32serviceutil.ServiceFramework.__init__(self, args)
+            self._stop_event = win32event.CreateEvent(None, 0, 0, None)
+
+        def SvcStop(self):
+            self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
+            win32event.SetEvent(self._stop_event)
+
+        def SvcDoRun(self):
+            servicemanager.LogMsg(
+                servicemanager.EVENTLOG_INFORMATION_TYPE,
+                servicemanager.PYS_SERVICE_STARTED,
+                (self._svc_name_, ""),
+            )
+            log.info("Serviço iniciado")
+            while True:
+                rc = win32event.WaitForSingleObject(self._stop_event, INTERVALO_SEGUNDOS * 1000)
+                if rc == win32event.WAIT_OBJECT_0:
+                    break
+                processar_pendentes()
+            log.info("Serviço encerrado")
+
+    _SERVICE_AVAILABLE = True
+
+except ImportError:
+    _SERVICE_AVAILABLE = False
+
+
+# ── Entry point ──────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    if len(sys.argv) == 1:
+        loop_console()
+    elif _SERVICE_AVAILABLE:
+        win32serviceutil.HandleCommandLine(GustoImpressaoService)
+    else:
+        print("pywin32 não instalado. Use: pip install pywin32")
+        sys.exit(1)
