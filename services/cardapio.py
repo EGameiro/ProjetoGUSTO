@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 from datetime import date
@@ -26,9 +27,13 @@ def brl(valor: float) -> str:
 
 def _buscar_planilha() -> dict:
     """Lê a aba Cardapio e devolve um dict {campo: valor_do_dia}."""
-    creds = Credentials.from_service_account_file(
-        config.GOOGLE_CREDENTIALS_FILE, scopes=_SCOPES
-    )
+    if config.GOOGLE_CREDENTIALS_JSON:
+        info = json.loads(config.GOOGLE_CREDENTIALS_JSON)
+        creds = Credentials.from_service_account_info(info, scopes=_SCOPES)
+    else:
+        creds = Credentials.from_service_account_file(
+            config.GOOGLE_CREDENTIALS_FILE, scopes=_SCOPES
+        )
     gc = gspread.authorize(creds)
     sh = gc.open_by_key(config.GOOGLE_SHEET_ID)
     ws = sh.worksheet("Cardapio")
