@@ -28,9 +28,11 @@ def brl(valor: float) -> str:
 def _buscar_planilha() -> dict:
     """Lê a aba Cardapio e devolve um dict {campo: valor_do_dia}."""
     if config.GOOGLE_CREDENTIALS_JSON:
+        log.info("Usando credenciais da variavel de ambiente GOOGLE_CREDENTIALS_JSON")
         info = json.loads(config.GOOGLE_CREDENTIALS_JSON)
         creds = Credentials.from_service_account_info(info, scopes=_SCOPES)
     else:
+        log.info(f"Usando arquivo de credenciais: {config.GOOGLE_CREDENTIALS_FILE}")
         creds = Credentials.from_service_account_file(
             config.GOOGLE_CREDENTIALS_FILE, scopes=_SCOPES
         )
