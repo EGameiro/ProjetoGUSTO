@@ -21,6 +21,12 @@ async def processar(msg: dict):
 
     log.info(f"[{numero}] etapa={etapa} | texto={texto!r}")
 
+    _SAUDACOES = {"oi", "ola", "olá", "bom dia", "boa tarde", "boa noite", "hey", "hello", "hi"}
+    if texto.lower().strip() in _SAUDACOES and etapa != "aguardando_confirmacao":
+        await sess.delete_session(numero)
+        await _inicio(numero)
+        return
+
     if etapa == "inicio":
         await _inicio(numero)
 
