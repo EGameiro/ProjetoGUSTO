@@ -58,11 +58,14 @@ async def webhook(request: Request):
     except Exception:
         return JSONResponse({"status": "ok"})  # retorna 200 mesmo com payload inválido
 
-    log.debug(f"Webhook recebido: {payload}")
+    # log temporário para debug de tipos desconhecidos
+    event_type = payload.get("EventType", "")
+    msg_type   = payload.get("message", {}).get("type", "")
+    if event_type == "messages" and msg_type not in ("text", "image", "audio"):
+        log.info(f"Payload tipo desconhecido — EventType={event_type} | msg.type={msg_type} | payload={payload}")
 
     msg = normalizar_payload(payload)
     if msg is None:
-        # fromMe, grupo, tipo não suportado — ignora silenciosamente
         return JSONResponse({"status": "ok"})
 
     log.info(f"Mensagem de {msg['numero']} | tipo={msg['tipo_midia']} | texto={msg['texto']!r}")
