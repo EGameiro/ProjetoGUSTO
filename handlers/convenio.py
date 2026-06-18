@@ -63,7 +63,7 @@ async def _processar_planilha(numero: str, sessao: dict, empresa: dict, url_midi
     sessao["etapa"]      = "aguardando_confirmacao"
     sessao["pedidos"]    = pedidos
     sessao["empresa_id"] = empresa.get("id")
-    sessao["endereco"]   = empresa.get("endereco")
+    sessao["endereco"]   = empresa.get("endereco_padrao")
     await sess.set_session(numero, sessao)
 
     resumo = _montar_resumo(pedidos)
@@ -83,7 +83,7 @@ async def _receber_confirmacao(numero: str, sessao: dict, texto: str, empresa: d
                 f"Pedidos confirmados! ✅\n\n"
                 f"*{len(ids)} pedido(s)* registrado(s) com sucesso.\n"
                 f"Números: {', '.join(f'#{i}' for i in ids)}\n\n"
-                f"Previsão de entrega: *{empresa.get('horario_entrega', 'a confirmar')}* 🛵"
+                f"Previsão de entrega: *{empresa.get('horario_padrao', 'a confirmar')}* 🛵"
             )
             log.info(f"[CONVENIO][{numero}] {len(ids)} pedidos salvos: {ids}")
         except Exception as e:
