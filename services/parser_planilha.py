@@ -94,7 +94,9 @@ def parsear(conteudo: bytes) -> list[dict]:
             if nome_acomp and nome_acomp.lower() not in _LABELS_IGNORAR:
                 # detecta linha de tamanho se todos os valores forem tamanhos
                 vals = [str(row.iloc[c]).strip().upper() for c, _ in colunas_pessoas]
-                if all(v in ("MINI", "NORMAL", "EXECUTIVA", "CHURRASCO", "") for v in vals):
+                _TAMANHOS = {"MINI", "NORMAL", "EXECUTIVA", "CHURRASCO"}
+                if (all(v in _TAMANHOS | {""} for v in vals)
+                        and any(v in _TAMANHOS for v in vals)):
                     tamanho_row = row
                     secao = None
                     continue
@@ -103,7 +105,9 @@ def parsear(conteudo: bytes) -> list[dict]:
         elif secao is None:
             # linha de tamanho (sem seção explícita)
             vals = [str(row.iloc[c]).strip().upper() for c, _ in colunas_pessoas]
-            if any(v in ("MINI", "NORMAL", "EXECUTIVA", "CHURRASCO") for v in vals):
+            _TAMANHOS = {"MINI", "NORMAL", "EXECUTIVA", "CHURRASCO"}
+            if (all(v in _TAMANHOS | {""} for v in vals)
+                    and any(v in _TAMANHOS for v in vals)):
                 tamanho_row = row
                 continue
             # observações livres
