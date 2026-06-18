@@ -102,27 +102,29 @@ def normalizar_payload(payload: dict) -> dict | None:
 
 async def baixar_midia_uazapi(url_midia: str) -> bytes:
     """
-    Baixa mídia via endpoint do UAZAPI (lida com URLs criptografadas do WhatsApp).
+    Baixa mídia via endpoint do UAZAPI.
     url_midia: string no formato '__uazapi_download__{messageid}__{chatid}'
+    Docs: POST {BASE}/{instance}/message/download  payload: {"id": msg_id, "return_link": true}
+    Resposta: {"fileURL": "...", ...}
     """
-    _, _, msg_id, chat_id = url_midia.split("__", 3)
-    url = f"{config.UAZAPI_BASE_URL}/message/download"
-    payload = {"messageid": msg_id, "chatid": chat_id}
+    partes  = url_midia.split("__")
+    msg_id  = partes[2]
+    url     = f"{config.UAZAPI_BASE_URL}/{config.UAZAPI_INSTANCE}/message/download"
+    payload = {"id": msg_id, "return_link": True}
     headers = {"token": config.UAZAPI_TOKEN, "Content-Type": "application/json"}
 
+    log.info(f"UAZAPI download: POST {url} id={msg_id}")
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(url, json=payload, headers=headers)
         if not resp.is_success:
             raise Exception(f"UAZAPI download falhou [{resp.status_code}]: {resp.text}")
-        # UAZAPI pode retornar JSON com URL pública ou bytes direto
-        ct = resp.headers.get("content-type", "")
-        if "json" in ct:
-            data = resp.json()
-            # tenta URL pública no JSON
-            pub_url = data.get("url") or data.get("mediaUrl") or data.get("fileUrl")
-            if pub_url:
-                r2 = await client.get(pub_url)
-                r2.raise_for_status()
-                return r2.content
-            raise Exception(f"UAZAPI não retornou URL de download: {data}")
-        return resp.content
+
+        data    = resp.json()
+        log.info(f"UAZAPI download resposta: {data}")
+        file_url = data.get("fileURL") or data.get("fileUrl") or data.get("url")
+        if not file_url:
+            raise Exception(f"fileURL não encontrado na resposta: {data}")
+
+        r2 = await client.get(file_url)
+        r2.raise_for_status()
+        return r2.content
