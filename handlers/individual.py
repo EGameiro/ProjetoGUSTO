@@ -2,7 +2,7 @@ import logging
 from services import session as sess
 from services.uazapi import enviar_texto
 from services.cardapio import formatar_cardapio, get_acompanhamentos_hoje, PRECOS
-from services.extrator import extrair_pedido
+from services.extrator import extrair_pedido, responder_pergunta, _nada_extraido
 from db.pedidos import salvar_pedido_individual
 
 log = logging.getLogger(__name__)
@@ -53,6 +53,16 @@ async def _coletando(numero: str, sessao: dict, texto: str):
     # Extrai campos da mensagem atual
     extraido = await extrair_pedido(texto)
     log.info(f"[{numero}] extraido={extraido}")
+
+    # Se não extraiu nada útil, é uma dúvida — responde e aguarda pedido
+    if _nada_extraido(extraido):
+        cardapio = formatar_cardapio()
+        resposta = await responder_pergunta(texto, cardapio)
+        if resposta:
+            await enviar_texto(numero, resposta)
+        else:
+            await enviar_texto(numero, "Não entendi bem. Pode me dizer qual prato você gostaria?")
+        return  # mantém etapa=coletando, aguarda próxima mensagem
 
     # Mescla na sessão (nunca sobrescreve com None o que já estava preenchido)
     _mesclar(sessao, extraido)
