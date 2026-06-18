@@ -264,11 +264,11 @@ function renderizar(pedidos) {
     // Botões de ação conforme status atual
     let acoesHtml = '';
     if (p.status === 'pendente') {
-      acoesHtml = `<button class="btn-status btn-preparo" onclick="mudarStatus(${p.id}, 'preparo')">▶ Em preparo</button>`;
+      acoesHtml = `<button class="btn-status btn-preparo" onclick="mudarStatus(${p.id}, 'preparo')">▶ Iniciar preparo</button>`;
     } else if (p.status === 'preparo') {
-      acoesHtml = `<button class="btn-status btn-saiu" onclick="mudarStatus(${p.id}, 'saiu')">🛵 Saiu p/ entrega</button>`;
+      acoesHtml = `<button class="btn-status btn-saiu" onclick="mudarStatus(${p.id}, 'saiu')">🛵 Confirmar saída</button>`;
     } else if (p.status === 'saiu') {
-      acoesHtml = `<button class="btn-status btn-entregue" onclick="mudarStatus(${p.id}, 'entregue')">✓ Entregue</button>`;
+      acoesHtml = `<button class="btn-status btn-entregue" onclick="mudarStatus(${p.id}, 'entregue')">✓ Confirmar entrega</button>`;
     }
 
     card.innerHTML = `
@@ -315,14 +315,23 @@ async function carregar() {
 
 async function mudarStatus(id, status) {
   try {
+    // Atualiza o pedido local imediatamente (sem esperar o servidor)
+    const p = todosPedidos.find(x => x.id === id);
+    if (p) p.status = status;
+    renderizar(todosPedidos);
+
+    // Persiste no servidor em background
     await fetch(`/pedidos/${id}/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status })
     });
-    await carregar();
+
+    // Reload completo em background para sincronizar totais
+    carregar();
   } catch (e) {
     alert('Erro ao atualizar status.');
+    carregar(); // reverte em caso de erro
   }
 }
 

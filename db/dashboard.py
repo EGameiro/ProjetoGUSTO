@@ -3,36 +3,57 @@ from db import connection as db
 
 
 async def listar_pedidos_hoje() -> list[dict]:
-    """Retorna todos os pedidos de hoje com seus itens."""
+    """Retorna todos os pedidos de hoje com seus itens (single JOIN query)."""
     hoje = date.today().isoformat()
-    pedidos = await db.fetchall(
+    rows = await db.fetchall(
         """
         SELECT p.id, p.tipo, p.numero_whatsapp, p.data_pedido, p.horario_pedido,
                p.endereco_entrega, p.hora_retirada, p.forma_pgto,
                p.status, p.impresso, p.criado_em,
-               e.nome_empresa
+               e.nome_empresa,
+               i.nome_pessoa, i.mistura, i.tamanho,
+               i.acomp_1, i.acomp_2, i.observacoes, i.valor_unitario
           FROM pedidos p
           LEFT JOIN empresas_convenio e ON e.id = p.empresa_id
+          LEFT JOIN itens_pedido i ON i.pedido_id = p.id
          WHERE p.data_pedido = %s
-         ORDER BY p.criado_em ASC
+         ORDER BY p.criado_em ASC, i.id ASC
         """,
         (hoje,)
     )
 
-    resultado = []
-    for p in pedidos:
-        itens = await db.fetchall(
-            """
-            SELECT nome_pessoa, mistura, tamanho,
-                   acomp_1, acomp_2, observacoes, valor_unitario
-              FROM itens_pedido
-             WHERE pedido_id = %s
-            """,
-            (p["id"],)
-        )
-        resultado.append({**p, "itens": itens})
+    # Agrupa itens por pedido em Python
+    pedidos: dict[int, dict] = {}
+    for row in rows:
+        pid = row["id"]
+        if pid not in pedidos:
+            pedidos[pid] = {
+                "id":               row["id"],
+                "tipo":             row["tipo"],
+                "numero_whatsapp":  row["numero_whatsapp"],
+                "data_pedido":      row["data_pedido"],
+                "horario_pedido":   row["horario_pedido"],
+                "endereco_entrega": row["endereco_entrega"],
+                "hora_retirada":    row["hora_retirada"],
+                "forma_pgto":       row["forma_pgto"],
+                "status":           row["status"],
+                "impresso":         row["impresso"],
+                "criado_em":        row["criado_em"],
+                "nome_empresa":     row["nome_empresa"],
+                "itens":            [],
+            }
+        if row["mistura"]:  # pedido pode não ter itens (raro)
+            pedidos[pid]["itens"].append({
+                "nome_pessoa":   row["nome_pessoa"],
+                "mistura":       row["mistura"],
+                "tamanho":       row["tamanho"],
+                "acomp_1":       row["acomp_1"],
+                "acomp_2":       row["acomp_2"],
+                "observacoes":   row["observacoes"],
+                "valor_unitario": row["valor_unitario"],
+            })
 
-    return resultado
+    return list(pedidos.values())
 
 
 async def totais_hoje() -> dict:
