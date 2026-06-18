@@ -1,7 +1,7 @@
 import logging
 from services import session as sess
 from services.uazapi import enviar_texto
-from services.cardapio import formatar_cardapio, get_acompanhamentos_hoje, PRECOS
+from services.cardapio import formatar_cardapio, get_acompanhamentos_hoje, get_precos_hoje
 from services.extrator import extrair_pedido, responder_pergunta, _nada_extraido
 from db.pedidos import salvar_pedido_individual
 
@@ -117,10 +117,11 @@ def _mesclar(sessao: dict, extraido: dict):
 
     # normaliza tamanho para title case e valida
     if sessao.get("tamanho"):
+        precos = get_precos_hoje()
         t = sessao["tamanho"].strip().title()
-        if t in PRECOS:
+        if t in precos:
             sessao["tamanho"]        = t
-            sessao["valor_unitario"] = PRECOS[t]
+            sessao["valor_unitario"] = precos[t]
         else:
             sessao.pop("tamanho", None)
             sessao.pop("valor_unitario", None)
@@ -159,7 +160,7 @@ def _montar_pergunta_faltando(sessao: dict, faltando: list) -> str:
         if campo == "mistura":
             partes.append("• *Qual prato* você quer?")
         elif campo == "tamanho":
-            opcoes = " | ".join(f"{k} ({brl(v)})" for k, v in PRECOS.items())
+            opcoes = " | ".join(f"{k} ({brl(v)})" for k, v in get_precos_hoje().items())
             partes.append(f"• *Tamanho:* {opcoes}")
         elif campo == "acomp":
             acomps = get_acompanhamentos_hoje()
