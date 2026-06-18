@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GUSTO — Dashboard Operacional</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #1a1a1a;
+    color: #f0f0f0;
+    min-height: 100vh;
+  }
+
+  header {
+    background: #111;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 2px solid #e8a020;
+  }
+  header h1 { font-size: 1.4rem; color: #e8a020; letter-spacing: 1px; }
+  #ultima-atualizacao { font-size: 0.8rem; color: #888; }
+
+  /* Totais */
+  #totais {
+    display: flex;
+    gap: 16px;
+    padding: 20px 24px;
+    flex-wrap: wrap;
+  }
+  .card-total {
+    background: #242424;
+    border-radius: 10px;
+    padding: 16px 24px;
+    min-width: 140px;
+    text-align: center;
+    border-top: 3px solid #e8a020;
+  }
+  .card-total .valor { font-size: 2rem; font-weight: 700; color: #e8a020; }
+  .card-total .label { font-size: 0.75rem; color: #aaa; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Filtros */
+  #filtros {
+    padding: 0 24px 16px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .btn-filtro {
+    padding: 6px 16px;
+    border-radius: 20px;
+    border: 1px solid #444;
+    background: #2a2a2a;
+    color: #ccc;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+  }
+  .btn-filtro.ativo, .btn-filtro:hover { background: #e8a020; color: #111; border-color: #e8a020; }
+
+  /* Fila */
+  #fila {
+    padding: 0 24px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .pedido-card {
+    background: #242424;
+    border-radius: 10px;
+    padding: 16px;
+    border-left: 5px solid #555;
+    transition: border-color 0.3s;
+  }
+  .pedido-card[data-status="pendente"] { border-left-color: #e8a020; }
+  .pedido-card[data-status="preparo"]  { border-left-color: #3b9eff; }
+  .pedido-card[data-status="saiu"]     { border-left-color: #a855f7; }
+  .pedido-card[data-status="entregue"] { border-left-color: #22c55e; opacity: 0.6; }
+
+  .pedido-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .pedido-id    { font-weight: 700; color: #e8a020; font-size: 1rem; }
+  .pedido-hora  { color: #aaa; font-size: 0.85rem; }
+  .pedido-tipo  { font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+  .tipo-individual { background: #3b4a1a; color: #a8d040; }
+  .tipo-convenio   { background: #1a2e4a; color: #60aaff; }
+
+  .badge-status {
+    font-size: 0.75rem;
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-weight: 600;
+    margin-left: auto;
+  }
+  .status-pendente { background: #3a2e00; color: #e8a020; }
+  .status-preparo  { background: #0a1e3a; color: #3b9eff; }
+  .status-saiu     { background: #20083a; color: #a855f7; }
+  .status-entregue { background: #0a2a0a; color: #22c55e; }
+
+  .badge-impresso {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #2a2a2a;
+    color: #888;
+    border: 1px solid #444;
+  }
+  .badge-impresso.sim { background: #0a2a0a; color: #22c55e; border-color: #22c55e; }
+
+  .itens-lista { margin-bottom: 10px; }
+  .item-linha {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 5px 0;
+    border-bottom: 1px solid #333;
+    font-size: 0.9rem;
+  }
+  .item-linha:last-child { border-bottom: none; }
+  .item-nome    { font-weight: 600; min-width: 100px; }
+  .item-prato   { color: #ddd; flex: 1; }
+  .item-tamanho { color: #aaa; font-size: 0.8rem; }
+  .item-valor   { color: #e8a020; font-size: 0.85rem; min-width: 60px; text-align: right; }
+  .item-obs     { color: #f87171; font-size: 0.8rem; }
+
+  .pedido-entrega {
+    font-size: 0.82rem;
+    color: #aaa;
+    margin-bottom: 10px;
+  }
+  .pedido-entrega strong { color: #ddd; }
+
+  .acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn-status {
+    padding: 5px 14px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: opacity 0.2s;
+  }
+  .btn-status:hover { opacity: 0.8; }
+  .btn-preparo  { background: #3b9eff; color: #fff; }
+  .btn-saiu     { background: #a855f7; color: #fff; }
+  .btn-entregue { background: #22c55e; color: #111; }
+
+  #vazio { text-align: center; color: #666; padding: 60px 0; font-size: 1.1rem; }
+
+  @media (max-width: 600px) {
+    #totais { gap: 10px; padding: 12px; }
+    #fila, #filtros { padding: 0 12px 24px; }
+    .card-total { min-width: 100px; padding: 12px; }
+    .card-total .valor { font-size: 1.5rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🍽️ GUSTO — Painel Operacional</h1>
+  <span id="ultima-atualizacao">Carregando...</span>
+</header>
+
+<div id="totais">
+  <div class="card-total"><div class="valor" id="t-pedidos">—</div><div class="label">Pedidos hoje</div></div>
+  <div class="card-total"><div class="valor" id="t-marmitas">—</div><div class="label">Marmitas</div></div>
+  <div class="card-total"><div class="valor" id="t-individuais">—</div><div class="label">Individuais</div></div>
+  <div class="card-total"><div class="valor" id="t-convenios">—</div><div class="label">Convênios</div></div>
+  <div class="card-total"><div class="valor" id="t-entregues">—</div><div class="label">Entregues</div></div>
+  <div class="card-total"><div class="valor" id="t-impressao">—</div><div class="label">Aguard. impressão</div></div>
+  <div class="card-total"><div class="valor" id="t-faturamento">—</div><div class="label">Faturamento</div></div>
+</div>
+
+<div id="filtros">
+  <button class="btn-filtro ativo" data-filtro="todos"     onclick="filtrar(this)">Todos</button>
+  <button class="btn-filtro"       data-filtro="pendente"  onclick="filtrar(this)">Pendente</button>
+  <button class="btn-filtro"       data-filtro="preparo"   onclick="filtrar(this)">Em preparo</button>
+  <button class="btn-filtro"       data-filtro="saiu"      onclick="filtrar(this)">Saiu p/ entrega</button>
+  <button class="btn-filtro"       data-filtro="entregue"  onclick="filtrar(this)">Entregue</button>
+</div>
+
+<div id="fila"></div>
+<div id="vazio" style="display:none">Nenhum pedido encontrado para hoje.</div>
+
+<script>
+let todosPedidos = [];
+let filtroAtivo  = "todos";
+
+function brl(v) {
+  return v ? `R$ ${parseFloat(v).toFixed(2).replace('.', ',')}` : '';
+}
+
+function horaStr(h) {
+  if (!h) return '';
+  return String(h).slice(0, 5);
+}
+
+function renderizar(pedidos) {
+  const fila = document.getElementById('fila');
+  const vazio = document.getElementById('vazio');
+  fila.innerHTML = '';
+
+  const filtrados = filtroAtivo === 'todos'
+    ? pedidos
+    : pedidos.filter(p => p.status === filtroAtivo);
+
+  if (filtrados.length === 0) {
+    vazio.style.display = 'block';
+    return;
+  }
+  vazio.style.display = 'none';
+
+  for (const p of filtrados) {
+    const card = document.createElement('div');
+    card.className = 'pedido-card';
+    card.dataset.status = p.status;
+
+    const tipoLabel = p.tipo === 'convenio'
+      ? `<span class="pedido-tipo tipo-convenio">CONVÊNIO${p.nome_empresa ? ' — ' + p.nome_empresa : ''}</span>`
+      : `<span class="pedido-tipo tipo-individual">INDIVIDUAL</span>`;
+
+    const badgeImpresso = p.impresso
+      ? `<span class="badge-impresso sim">✓ Impresso</span>`
+      : `<span class="badge-impresso">Não impresso</span>`;
+
+    const statusLabel = {
+      pendente: 'Pendente', preparo: 'Em preparo',
+      saiu: 'Saiu p/ entrega', entregue: 'Entregue'
+    }[p.status] || p.status;
+
+    // Itens
+    let itensHtml = '';
+    for (const it of (p.itens || [])) {
+      const acomps = [it.acomp_1, it.acomp_2].filter(Boolean).join(' + ');
+      const obsHtml = it.observacoes ? `<div class="item-obs">⚠ ${it.observacoes}</div>` : '';
+      itensHtml += `
+        <div class="item-linha">
+          <span class="item-nome">${(it.nome_pessoa || 'Cliente').toUpperCase()}</span>
+          <span class="item-prato">${it.mistura || ''}${acomps ? ' · ' + acomps : ''}</span>
+          <span class="item-tamanho">${it.tamanho || ''}</span>
+          <span class="item-valor">${brl(it.valor_unitario)}</span>
+        </div>${obsHtml}`;
+    }
+
+    // Entrega
+    let entregaHtml = '';
+    if (p.hora_retirada) {
+      entregaHtml = `<div class="pedido-entrega">🏪 <strong>Retirada</strong> às ${horaStr(p.hora_retirada)}</div>`;
+    } else if (p.endereco_entrega) {
+      entregaHtml = `<div class="pedido-entrega">🛵 <strong>Entrega:</strong> ${p.endereco_entrega}</div>`;
+    }
+
+    // Botões de ação conforme status atual
+    let acoesHtml = '';
+    if (p.status === 'pendente') {
+      acoesHtml = `<button class="btn-status btn-preparo" onclick="mudarStatus(${p.id}, 'preparo')">▶ Em preparo</button>`;
+    } else if (p.status === 'preparo') {
+      acoesHtml = `<button class="btn-status btn-saiu" onclick="mudarStatus(${p.id}, 'saiu')">🛵 Saiu p/ entrega</button>`;
+    } else if (p.status === 'saiu') {
+      acoesHtml = `<button class="btn-status btn-entregue" onclick="mudarStatus(${p.id}, 'entregue')">✓ Entregue</button>`;
+    }
+
+    card.innerHTML = `
+      <div class="pedido-header">
+        <span class="pedido-id">#${p.id}</span>
+        <span class="pedido-hora">${horaStr(p.horario_pedido)}</span>
+        ${tipoLabel}
+        ${badgeImpresso}
+        <span class="badge-status status-${p.status}">${statusLabel}</span>
+      </div>
+      <div class="itens-lista">${itensHtml}</div>
+      ${entregaHtml}
+      <div class="acoes">${acoesHtml}</div>`;
+
+    fila.appendChild(card);
+  }
+}
+
+async function carregar() {
+  try {
+    const res  = await fetch('/api/dashboard');
+    const data = await res.json();
+    todosPedidos = data.pedidos || [];
+    const t = data.totais || {};
+
+    document.getElementById('t-pedidos').textContent    = t.total_pedidos   ?? 0;
+    document.getElementById('t-marmitas').textContent   = t.total_marmitas  ?? 0;
+    document.getElementById('t-individuais').textContent = t.individuais     ?? 0;
+    document.getElementById('t-convenios').textContent  = t.convenios       ?? 0;
+    document.getElementById('t-entregues').textContent  = t.entregues       ?? 0;
+    document.getElementById('t-impressao').textContent  = t.aguardando_impressao ?? 0;
+    document.getElementById('t-faturamento').textContent = t.faturamento_total != null
+      ? `R$ ${parseFloat(t.faturamento_total).toFixed(2).replace('.', ',')}`
+      : 'R$ 0,00';
+
+    document.getElementById('ultima-atualizacao').textContent =
+      'Atualizado às ' + new Date().toLocaleTimeString('pt-BR');
+
+    renderizar(todosPedidos);
+  } catch (e) {
+    document.getElementById('ultima-atualizacao').textContent = 'Erro ao carregar dados';
+  }
+}
+
+async function mudarStatus(id, status) {
+  try {
+    await fetch(`/pedidos/${id}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    await carregar();
+  } catch (e) {
+    alert('Erro ao atualizar status.');
+  }
+}
+
+function filtrar(btn) {
+  document.querySelectorAll('.btn-filtro').forEach(b => b.classList.remove('ativo'));
+  btn.classList.add('ativo');
+  filtroAtivo = btn.dataset.filtro;
+  renderizar(todosPedidos);
+}
+
+// Atualiza automaticamente a cada 30 segundos
+carregar();
+setInterval(carregar, 30000);
+</script>
+</body>
+</html>
