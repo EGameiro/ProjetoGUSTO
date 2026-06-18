@@ -5,6 +5,8 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 import config
 from db.connection import get_pool, close_pool
@@ -13,6 +15,7 @@ from services.redis_client import get_redis, close_redis
 from services.uazapi import normalizar_payload
 from handlers.classifier import classificar
 from handlers import individual, convenio
+from scheduler.jobs import broadcast_cardapio
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,10 +41,23 @@ async def lifespan(app: FastAPI):
     # Webhook configurado manualmente no painel do UAZAPI
     log.info(f"Webhook endpoint disponível em: {config.WEBHOOK_URL}/webhook")
 
+    # ── APScheduler — broadcast do cardápio ──────────────────
+    hora, minuto = config.HORARIO_BROADCAST_CARDAPIO.split(":")
+    scheduler = AsyncIOScheduler(timezone="America/Sao_Paulo")
+    scheduler.add_job(
+        broadcast_cardapio,
+        CronTrigger(hour=int(hora), minute=int(minuto)),
+        id="broadcast_cardapio",
+        replace_existing=True,
+    )
+    scheduler.start()
+    log.info(f"Scheduler iniciado — broadcast do cardápio agendado para {config.HORARIO_BROADCAST_CARDAPIO}")
+
     yield
 
     # ── Shutdown ─────────────────────────────────────────────
     log.info("Encerrando GUSTO Agent...")
+    scheduler.shutdown(wait=False)
     await close_pool()
     await close_redis()
 

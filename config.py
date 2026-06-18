@@ -27,5 +27,8 @@ GOOGLE_SHEET_ID          = os.getenv("GOOGLE_SHEET_ID", "")
 GOOGLE_CREDENTIALS_FILE  = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials/google_service_account.json")
 GOOGLE_CREDENTIALS_JSON  = os.getenv("GOOGLE_CREDENTIALS_JSON", "")  # JSON inline (Railway)
 
+# Scheduler
+HORARIO_BROADCAST_CARDAPIO = os.getenv("HORARIO_BROADCAST_CARDAPIO", "08:00")
+
 # App
 PORT = int(os.getenv("PORT", 8000))
