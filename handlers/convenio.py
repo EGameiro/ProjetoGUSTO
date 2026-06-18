@@ -1,15 +1,11 @@
 import logging
-import httpx
-import config
 from services import session as sess
-from services.uazapi import enviar_texto
+from services.uazapi import enviar_texto, baixar_midia_uazapi
 from services.parser_planilha import parsear
 from services.cardapio import brl, get_precos_hoje
 from db.pedidos import salvar_lote_convenio
 
 log = logging.getLogger(__name__)
-
-_HEADERS_UAZAPI = {"token": config.UAZAPI_TOKEN}
 
 
 async def processar(msg: dict, empresa: dict):
@@ -44,7 +40,7 @@ async def _processar_planilha(numero: str, sessao: dict, empresa: dict, url_midi
     await enviar_texto(numero, "Recebi a planilha! Processando os pedidos... ⏳")
 
     try:
-        conteudo = await _baixar_arquivo(url_midia)
+        conteudo = await baixar_midia_uazapi(url_midia)
     except Exception as e:
         log.error(f"[CONVENIO][{numero}] Erro ao baixar arquivo: {e}")
         await enviar_texto(numero, "Não consegui baixar o arquivo. Tente enviar novamente.")
@@ -118,8 +114,3 @@ def _montar_resumo(pedidos: list[dict]) -> str:
     return "\n".join(linhas)
 
 
-async def _baixar_arquivo(url: str) -> bytes:
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(url, headers=_HEADERS_UAZAPI)
-        resp.raise_for_status()
-        return resp.content
