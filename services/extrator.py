@@ -4,6 +4,7 @@ Retorna um dict com os campos encontrados (None para os não encontrados).
 """
 import json
 import logging
+import re
 import httpx
 import config
 
@@ -61,10 +62,9 @@ async def extrair_pedido(texto: str) -> dict:
                 return vazio
             data = resp.json()
             raw = data["content"][0]["text"].strip()
-            # remove markdown code fences se o modelo as incluir
-            if raw.startswith("```"):
-                raw = raw.split("```", 2)[-1] if raw.count("```") >= 2 else raw
-                raw = raw.lstrip("json").strip().rstrip("```").strip()
+            # remove markdown code fences (```json ... ```)
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw).strip()
             log.info(f"Extrator raw: {raw}")
             resultado = json.loads(raw)
             # normaliza tamanho para title case
