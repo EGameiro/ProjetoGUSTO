@@ -109,7 +109,7 @@ async def baixar_midia_uazapi(url_midia: str) -> bytes:
     """
     partes  = url_midia.split("__")
     msg_id  = partes[2]
-    url     = f"{config.UAZAPI_BASE_URL}/{config.UAZAPI_INSTANCE}/message/download"
+    url     = f"{config.UAZAPI_BASE_URL}/message/download"
     payload = {"id": msg_id, "return_link": True}
     headers = {"token": config.UAZAPI_TOKEN, "Content-Type": "application/json"}
 
