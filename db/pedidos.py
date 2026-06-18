@@ -2,6 +2,47 @@ from datetime import date, datetime
 from db import connection as db
 
 
+async def salvar_lote_convenio(pedidos: list[dict], numero: str, empresa_id: int) -> list[int]:
+    """Salva todos os pedidos do lote convênio e retorna lista de IDs gerados."""
+    ids = []
+    hoje = date.today()
+    hora = datetime.now().strftime("%H:%M:%S")
+
+    for p in pedidos:
+        pedido_id = await db.execute(
+            """
+            INSERT INTO pedidos
+                (tipo, cliente_id, empresa_id, numero_whatsapp,
+                 data_pedido, horario_pedido, endereco_entrega,
+                 hora_retirada, forma_pgto, status, impresso)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            ("convenio", None, empresa_id, numero,
+             hoje, hora, None, None, None, "pendente", 0)
+        )
+
+        await db.execute(
+            """
+            INSERT INTO itens_pedido
+                (pedido_id, nome_pessoa, mistura, tamanho,
+                 acomp_1, acomp_2, observacoes, valor_unitario)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (pedido_id,
+             p.get("nome", ""),
+             p.get("mistura"),
+             p.get("tamanho"),
+             p.get("acomp_1"),
+             p.get("acomp_2"),
+             p.get("observacoes"),
+             None)
+        )
+
+        ids.append(pedido_id)
+
+    return ids
+
+
 async def salvar_pedido_individual(sessao: dict, numero: str) -> int:
     pedido_id = await db.execute(
         """

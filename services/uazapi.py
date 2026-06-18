@@ -65,13 +65,17 @@ def normalizar_payload(payload: dict) -> dict | None:
         url_midia = msg.get("mediaUrl") or msg.get("url")
     elif msg_type == "audio":
         url_midia = msg.get("mediaUrl") or msg.get("url")
+    elif msg_type == "document":
+        url_midia = msg.get("mediaUrl") or msg.get("url")
+        texto     = msg.get("fileName") or msg.get("filename") or "documento"
     else:
         return None
 
     return {
         "numero":     numero,
-        "tipo_midia": "imagem" if msg_type == "image" else
-                      "audio"  if msg_type == "audio" else "texto",
+        "tipo_midia": "imagem"    if msg_type == "image"    else
+                      "audio"     if msg_type == "audio"    else
+                      "documento" if msg_type == "document" else "texto",
         "texto":      texto,
         "url_midia":  url_midia,
     }

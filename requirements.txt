@@ -15,6 +15,10 @@ redis>=5.0.4
 gspread>=6.1.2
 google-auth>=2.29.0
 
+# Planilha convênio
+pandas>=2.2.0
+openpyxl>=3.1.0
+
 # LLM
 anthropic>=0.40.0
 
