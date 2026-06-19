@@ -13,8 +13,8 @@ from db.connection import get_pool, close_pool
 from db import dashboard as dash_db
 from services.redis_client import get_redis, close_redis
 from services.uazapi import normalizar_payload
-from handlers.classifier import classificar
-from handlers import individual, convenio
+from handlers.classifier import eh_convenio
+from handlers import individual
 from scheduler.jobs import broadcast_cardapio
 
 logging.basicConfig(
@@ -95,13 +95,11 @@ async def webhook(request: Request):
 
     log.info(f"Mensagem de {msg['numero']} | tipo={msg['tipo_midia']} | texto={msg['texto']!r}")
 
-    # ── Classifier → roteamento ───────────────────────────────
-    tipo, empresa = await classificar(msg["numero"])
+    # ── Bloqueia números de convênio ──────────────────────────
+    if await eh_convenio(msg["numero"]):
+        return JSONResponse({"status": "ok"})
 
-    if tipo == "convenio":
-        await convenio.processar(msg, empresa)
-    else:
-        await individual.processar(msg)
+    await individual.processar(msg)
 
     return JSONResponse({"status": "ok"})
 

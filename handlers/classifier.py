@@ -4,25 +4,20 @@ from db import connection as db
 log = logging.getLogger(__name__)
 
 
-async def classificar(numero: str) -> tuple[str, dict | None]:
+async def eh_convenio(numero: str) -> bool:
     """
-    Verifica se o número pertence a um cliente convênio.
-
-    Retorna:
-        ('convenio', empresa_row)  — se encontrado em empresas_convenio
-        ('individual', None)       — caso contrário
+    Verifica se o número pertence a uma empresa conveniada.
+    Se sim, o bot deve ignorar silenciosamente a mensagem.
     """
     try:
-        empresa = await db.fetchone(
-            "SELECT * FROM empresas_convenio WHERE numero_whatsapp = %s AND ativo = 1",
+        row = await db.fetchone(
+            "SELECT id FROM empresas_convenio WHERE numero_whatsapp = %s AND ativo = 1",
             (numero,)
         )
-        if empresa:
-            log.info(f"[{numero}] Classificado como CONVÊNIO — {empresa['nome_empresa']}")
-            return "convenio", empresa
-
+        if row:
+            log.info(f"[{numero}] Número de convênio — ignorando mensagem")
+            return True
     except Exception as e:
         log.error(f"[{numero}] Erro ao consultar empresas_convenio: {e}")
 
-    log.info(f"[{numero}] Classificado como INDIVIDUAL")
-    return "individual", None
+    return False
