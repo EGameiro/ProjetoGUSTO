@@ -16,7 +16,7 @@ Recebe pedidos de marmitas executivas de clientes individuais, processa com IA e
 | Cardápio | Google Sheets (gspread) |
 | LLM | Claude Haiku 4.5 (Anthropic API) |
 | WhatsApp | UAZAPI |
-| Scheduler | APScheduler 3.x (AsyncIOScheduler) |
+| Scheduler | — (removido) |
 | Deploy | Railway |
 
 ---
@@ -48,7 +48,7 @@ gusto-agent/
 │   └── dashboard.py         → Queries do dashboard operacional
 │
 ├── scheduler/
-│   └── jobs.py              → broadcast_cardapio (placeholder — desativado)
+│   └── jobs.py              → sem jobs ativos (scheduler removido)
 │
 ├── dashboard/
 │   └── index.html           → Dashboard operacional (fila de pedidos do dia)
@@ -195,9 +195,6 @@ ANTHROPIC_API_KEY=
 GOOGLE_SHEET_ID=
 GOOGLE_CREDENTIALS_FILE=credentials/google_service_account.json
 GOOGLE_CREDENTIALS_JSON=   # JSON inline (Railway — substitui o arquivo)
-
-# Scheduler
-HORARIO_BROADCAST_CARDAPIO=08:00   # placeholder, broadcast desativado
 
 # App
 PORT=8000
