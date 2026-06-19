@@ -87,6 +87,10 @@ async def webhook(request: Request):
     msg_type   = payload.get("message", {}).get("type", "")
     if event_type == "messages" and msg_type not in ("text", "image", "audio"):
         log.info(f"Payload tipo desconhecido — EventType={event_type} | msg.type={msg_type} | payload={payload}")
+    # log temporário para mapear campos de nome no payload
+    if event_type == "messages" and msg_type == "text":
+        m = payload.get("message", {})
+        log.info(f"[DEBUG pushName] message.pushName={m.get('pushName')!r} | message.notifyName={m.get('notifyName')!r} | payload.pushName={payload.get('pushName')!r} | payload.notifyName={payload.get('notifyName')!r}")
 
     msg = normalizar_payload(payload)
     if msg is None:
