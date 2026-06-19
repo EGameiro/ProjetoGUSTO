@@ -27,6 +27,7 @@ Campos a extrair:
 - tamanho: "Mini", "Normal", "Executiva" ou "Churrasco" (string ou null)
 - acomp_1: primeiro acompanhamento (string ou null)
 - acomp_2: segundo acompanhamento, se houver (string ou null)
+- sem_acompanhamento: true se o cliente disse explicitamente que não quer acompanhamento (ex: "sem acompanhamento", "não quero acompanhamento", "só o prato"), false ou null caso contrário
 - observacoes: observações especiais, ex "sem feijão" (string ou null)
 - tipo_entrega: "entrega" ou "retirada" (string ou null)
 - endereco: endereço completo se for entrega (string ou null)
@@ -56,6 +57,7 @@ async def extrair_pedido(texto: str) -> dict:
     vazio = {
         "mistura": None, "tamanho": None,
         "acomp_1": None, "acomp_2": None,
+        "sem_acompanhamento": None,
         "observacoes": None, "tipo_entrega": None,
         "endereco": None, "hora_retirada": None,
     }
@@ -94,7 +96,7 @@ async def extrair_pedido(texto: str) -> dict:
 
 def _nada_extraido(resultado: dict) -> bool:
     """Retorna True se o extrator não encontrou nenhum campo útil."""
-    campos_uteis = ["mistura", "tamanho", "acomp_1", "tipo_entrega", "endereco"]
+    campos_uteis = ["mistura", "tamanho", "acomp_1", "sem_acompanhamento", "tipo_entrega", "endereco"]
     return all(resultado.get(c) is None for c in campos_uteis)
 
 

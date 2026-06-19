@@ -125,6 +125,10 @@ def _mesclar(sessao: dict, extraido: dict):
         if valor is not None and not sessao.get(campo):
             sessao[campo] = valor
 
+    # marca explicitamente que não quer acompanhamento
+    if extraido.get("sem_acompanhamento"):
+        sessao["sem_acompanhamento"] = True
+
     # normaliza tamanho para title case e valida
     if sessao.get("tamanho"):
         precos = get_precos_hoje()
@@ -149,7 +153,7 @@ def _campos_faltando(sessao: dict) -> list:
     if not sessao.get("tamanho"):
         faltando.append("tamanho")
 
-    if not sessao.get("acomp_1"):
+    if not sessao.get("acomp_1") and not sessao.get("sem_acompanhamento"):
         faltando.append("acomp")
 
     tipo = sessao.get("tipo_entrega")
