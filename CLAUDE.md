@@ -157,6 +157,12 @@ Se nenhum campo útil for extraído (`_nada_extraido()`), a mensagem é tratada 
 
 ---
 
+## Pendências
+
+- [ ] **Migrar cardápio do Google Sheets para a tabela `cardapio_web` do MySQL.** O portal web (GustoConvenio.Web) passa a ser a fonte oficial do cardápio. O `services/cardapio.py` precisa ser reescrito para ler de `cardapio_web` via MySQL em vez do Google Sheets. Quando isso estiver feito, as dependências `gspread`, `google-auth` e as credenciais do Google podem ser removidas.
+
+---
+
 ## Endpoints
 
 | Método | Rota | Descrição |
