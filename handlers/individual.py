@@ -3,7 +3,7 @@ from services import session as sess
 from services.uazapi import enviar_texto
 from services.cardapio import formatar_cardapio, get_acompanhamentos_hoje, get_precos_hoje
 from services.extrator import extrair_pedido, responder_pergunta, _nada_extraido
-from db.pedidos import salvar_pedido_individual
+from db.pedidos import salvar_pedido_individual, buscar_nome_cliente
 
 log = logging.getLogger(__name__)
 
@@ -13,8 +13,9 @@ def brl(valor: float) -> str:
 
 
 async def processar(msg: dict):
-    numero = msg["numero"]
-    texto  = (msg["texto"] or "").strip()
+    numero    = msg["numero"]
+    texto     = (msg["texto"] or "").strip()
+    push_name = msg.get("push_name", "")
 
     sessao = await sess.get_session(numero)
     etapa  = sessao.get("etapa", "inicio")
@@ -24,11 +25,11 @@ async def processar(msg: dict):
     _SAUDACOES = {"oi", "ola", "olá", "bom dia", "boa tarde", "boa noite", "hey", "hello", "hi"}
     if texto.lower().strip() in _SAUDACOES and etapa != "aguardando_confirmacao":
         await sess.delete_session(numero)
-        await _inicio(numero)
+        await _inicio(numero, push_name)
         return
 
     if etapa == "inicio":
-        await _inicio(numero)
+        await _inicio(numero, push_name)
 
     elif etapa == "coletando":
         await _coletando(numero, sessao, texto)
@@ -45,9 +46,12 @@ async def processar(msg: dict):
 
 # ── Etapas ────────────────────────────────────────────────────────────────────
 
-async def _inicio(numero: str):
+async def _inicio(numero: str, push_name: str = ""):
+    nome = await buscar_nome_cliente(numero) or push_name or ""
+    saudacao = f"Olá, *{nome.split()[0]}*! " if nome else "Olá! "
+
     cardapio = formatar_cardapio()
-    await enviar_texto(numero, f"Olá! Bem-vindo ao *GUSTO* 🍽️\n\n{cardapio}")
+    await enviar_texto(numero, f"{saudacao}Bem-vindo ao *GUSTO* 🍽️\n\n{cardapio}")
     await enviar_texto(numero, "Qual prato você vai querer hoje?")
     await sess.set_session(numero, {"etapa": "coletando"})
 

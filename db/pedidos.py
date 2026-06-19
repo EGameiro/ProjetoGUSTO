@@ -2,6 +2,14 @@ from datetime import date, datetime
 from db import connection as db
 
 
+async def buscar_nome_cliente(numero: str) -> str | None:
+    """Retorna o nome salvo do cliente, ou None se não cadastrado."""
+    row = await db.fetchone(
+        "SELECT nome FROM clientes WHERE numero_whatsapp = %s", (numero,)
+    )
+    return row["nome"] if row and row.get("nome") else None
+
+
 async def salvar_lote_convenio(pedidos: list[dict], numero: str, empresa_id: int) -> list[int]:
     """Salva todos os pedidos do lote convênio e retorna lista de IDs gerados."""
     ids = []

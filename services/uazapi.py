@@ -92,8 +92,11 @@ def normalizar_payload(payload: dict) -> dict | None:
                  "imagem"    if (media_type == "image" or msg_type == "image") else \
                  "audio"     if (media_type == "audio" or msg_type == "audio") else "texto"
 
+    push_name = (msg.get("pushName") or "").strip()
+
     return {
         "numero":     numero,
+        "push_name":  push_name,
         "tipo_midia": tipo_midia,
         "texto":      texto,
         "url_midia":  url_midia,
