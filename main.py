@@ -54,37 +54,67 @@ class StatusUpdate(BaseModel):
     status: str
 
 
-@app.post("/webhook")
-async def webhook(request: Request):
+def _extrair_restaurante_id(tenant: str) -> int | None:
     """
-    Recebe eventos do UAZAPI.
-    Deve retornar 200 imediatamente — o UAZAPI não reencaminha
-    se demorar ou receber erro.
+    Extrai o restaurante_id do parâmetro de rota.
+    Formato esperado: '{slug}-{id}'  ex: 'gusto-1', 'sabor-2'
+    Retorna None se o formato for inválido.
     """
     try:
-        payload = await request.json()
-    except Exception:
-        return JSONResponse({"status": "ok"})  # retorna 200 mesmo com payload inválido
+        return int(tenant.rsplit("-", 1)[-1])
+    except (ValueError, IndexError):
+        return None
 
-    # log temporário para debug de tipos desconhecidos
+
+async def _processar_webhook(payload: dict, restaurante_id: int):
+    """Lógica comum para processar um payload de webhook."""
     event_type = payload.get("EventType", "")
     msg_type   = payload.get("message", {}).get("type", "")
     if event_type == "messages" and msg_type not in ("text", "image", "audio"):
-        log.info(f"Payload tipo desconhecido — EventType={event_type} | msg.type={msg_type} | payload={payload}")
-
+        log.info(f"[restaurante={restaurante_id}] Tipo desconhecido — EventType={event_type} | msg.type={msg_type}")
 
     msg = normalizar_payload(payload)
     if msg is None:
-        return JSONResponse({"status": "ok"})
+        return
 
-    log.info(f"Mensagem de {msg['numero']} | tipo={msg['tipo_midia']} | texto={msg['texto']!r}")
+    log.info(f"[restaurante={restaurante_id}] Mensagem de {msg['numero']} | tipo={msg['tipo_midia']} | texto={msg['texto']!r}")
 
-    # ── Bloqueia números de convênio ──────────────────────────
     if await eh_convenio(msg["numero"]):
+        return
+
+    await individual.processar(msg, restaurante_id=restaurante_id)
+
+
+@app.post("/webhook/{tenant}")
+async def webhook_tenant(tenant: str, request: Request):
+    """
+    Webhook multi-tenant. Cada instância UAZAPI aponta para:
+        POST /webhook/{slug}-{restaurante_id}
+    Exemplo: POST /webhook/gusto-1
+    """
+    restaurante_id = _extrair_restaurante_id(tenant)
+    if restaurante_id is None:
+        log.warning(f"Webhook com tenant inválido: {tenant!r}")
         return JSONResponse({"status": "ok"})
 
-    await individual.processar(msg)
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"status": "ok"})
 
+    await _processar_webhook(payload, restaurante_id)
+    return JSONResponse({"status": "ok"})
+
+
+@app.post("/webhook")
+async def webhook(request: Request):
+    """Webhook legado — compatibilidade com instância GUSTO (restaurante_id=1)."""
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"status": "ok"})
+
+    await _processar_webhook(payload, restaurante_id=1)
     return JSONResponse({"status": "ok"})
 
 

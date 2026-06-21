@@ -12,7 +12,7 @@ def brl(valor: float) -> str:
     return f"R$ {valor:.2f}".replace(".", ",")
 
 
-async def processar(msg: dict):
+async def processar(msg: dict, restaurante_id: int = 1):
     numero    = msg["numero"]
     texto     = (msg["texto"] or "").strip()
     push_name = msg.get("push_name", "")
