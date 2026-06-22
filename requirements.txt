@@ -11,19 +11,8 @@ aiomysql>=0.2.0
 # Redis
 redis>=5.0.4
 
-# Google Sheets
-gspread>=6.1.2
-google-auth>=2.29.0
-
-# Planilha convênio
-pandas>=2.2.0
-openpyxl>=3.1.0
-
 # LLM
 anthropic>=0.40.0
-
-# Scheduler
-apscheduler>=3.10.0
 
 # Utilitários
 python-dotenv>=1.0.1

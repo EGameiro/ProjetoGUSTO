@@ -22,10 +22,5 @@ WEBHOOK_URL     = os.getenv("WEBHOOK_URL", "")   # URL pública deste servidor
 # LLM
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
-# Google Sheets
-GOOGLE_SHEET_ID          = os.getenv("GOOGLE_SHEET_ID", "")
-GOOGLE_CREDENTIALS_FILE  = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials/google_service_account.json")
-GOOGLE_CREDENTIALS_JSON  = os.getenv("GOOGLE_CREDENTIALS_JSON", "")  # JSON inline (Railway)
-
 # App
 PORT = int(os.getenv("PORT", 8000))

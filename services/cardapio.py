@@ -1,150 +1,127 @@
-import json
 import logging
 import time
 from datetime import date
-from google.oauth2.service_account import Credentials
-import gspread
-import config
+from db.connection import fetchall
 
 log = logging.getLogger(__name__)
 
-_SCOPES = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive",
-]
-
-# Cache em memória: (timestamp, dados)
-_cache: tuple[float, dict] | None = None
+# Cache por restaurante_id: { restaurante_id: (timestamp, dados) }
+_cache: dict[int, tuple[float, dict]] = {}
 _CACHE_TTL = 1800  # 30 minutos
 
-# Mapeamento weekday() → coluna B-G (índice 1-6)
-_DIA_COL = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6}  # seg=0 … sab=5
+# weekday() → dia_semana no banco (0=Seg … 5=Sab)
+_DIA_SEMANA = {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5}
 
 
 def brl(valor: float) -> str:
     return f"R$ {valor:.2f}".replace(".", ",")
 
 
-def _buscar_planilha() -> dict:
-    """Lê a aba Cardapio e devolve um dict {campo: valor_do_dia}."""
-    if config.GOOGLE_CREDENTIALS_JSON:
-        log.info("Usando credenciais da variavel de ambiente GOOGLE_CREDENTIALS_JSON")
-        info = json.loads(config.GOOGLE_CREDENTIALS_JSON)
-        creds = Credentials.from_service_account_info(info, scopes=_SCOPES)
-    else:
-        log.info(f"Usando arquivo de credenciais: {config.GOOGLE_CREDENTIALS_FILE}")
-        creds = Credentials.from_service_account_file(
-            config.GOOGLE_CREDENTIALS_FILE, scopes=_SCOPES
-        )
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_key(config.GOOGLE_SHEET_ID)
-    ws = sh.worksheet("Cardapio")
-    rows = ws.get_all_values()  # lista de listas
+async def _buscar_mysql(restaurante_id: int) -> dict:
+    """Lê cardapio_web do MySQL e retorna dict com pratos, acompanhamentos e preços."""
+    dia = _DIA_SEMANA.get(date.today().weekday(), 0)
 
-    dia_idx = _DIA_COL.get(date.today().weekday(), 1)  # fallback segunda
+    rows = await fetchall(
+        """
+        SELECT tipo, nome, preco
+        FROM cardapio_web
+        WHERE restaurante_id = %s
+          AND dia_semana = %s
+          AND empresa_id IS NULL
+          AND ativo = 1
+        ORDER BY tipo, ordem, nome
+        """,
+        (restaurante_id, dia),
+    )
 
-    resultado = {}
-    for row in rows[1:]:  # pula cabeçalho
-        if not row:
-            continue
-        campo = row[0].strip()
-        valor = row[dia_idx].strip() if len(row) > dia_idx else ""
-        resultado[campo] = valor
+    pratos = [r["nome"] for r in rows if r["tipo"] == "prato"]
+    acompanhamentos = [r["nome"] for r in rows if r["tipo"] == "acompanhamento"]
 
-    return resultado
+    # Preços: usa o primeiro prato com preço definido como referência por tamanho
+    # Como o WhatsApp não tem tamanho por prato, os preços são globais do restaurante.
+    # Mantemos os tamanhos padrão mas sobrescrevemos com valores do banco se existirem.
+    precos_banco = {r["nome"]: float(r["preco"]) for r in rows if r["preco"] is not None}
 
-
-def _get_dados() -> dict:
-    global _cache
-    agora = time.monotonic()
-    if _cache and (agora - _cache[0]) < _CACHE_TTL:
-        return _cache[1]
-
-    try:
-        dados = _buscar_planilha()
-        _cache = (agora, dados)
-        log.info("Cardapio recarregado do Google Sheets")
-        return dados
-    except Exception as e:
-        log.error(f"Erro ao ler Google Sheets: {e}")
-        if _cache:
-            log.warning("Usando cache anterior")
-            return _cache[1]
-        return {}
-
-
-def _get_precos(dados: dict) -> dict:
-    def _f(campo: str, fallback: float) -> float:
-        try:
-            return float(dados.get(campo, fallback))
-        except ValueError:
-            return fallback
-
-    return {
-        "Mini":       _f("PRECO_MINI",      21.90),
-        "Normal":     _f("PRECO_NORMAL",    23.90),
-        "Executiva":  _f("PRECO_EXECUTIVA", 24.90),
-        "Churrasco":  _f("PRECO_CHURRASCO", 27.90),
+    precos = {
+        "Mini":      precos_banco.get("Mini",      21.90),
+        "Normal":    precos_banco.get("Normal",    23.90),
+        "Executiva": precos_banco.get("Executiva", 24.90),
+        "Churrasco": precos_banco.get("Churrasco", 27.90),
     }
 
-
-def get_cardapio_hoje() -> dict:
-    """Retorna dict com pratos, acompanhamentos, precos e especial do dia."""
-    dados = _get_dados()
-    precos = _get_precos(dados)
-
-    pratos = [
-        dados[f"PRATO_{i}"]
-        for i in range(1, 10)
-        if dados.get(f"PRATO_{i}")
-    ]
-
-    acompanhamentos = [
-        dados[f"ACOMP_{i}"]
-        for i in range(1, 10)
-        if dados.get(f"ACOMP_{i}")
-    ]
-
-    dias = ["Segunda-feira", "Terca-feira", "Quarta-feira",
-            "Quinta-feira", "Sexta-feira", "Sabado", "Domingo"]
-    dia_nome = dias[min(date.today().weekday(), 6)]
-
     return {
-        "dia":             dia_nome,
         "pratos":          pratos,
         "acompanhamentos": acompanhamentos,
-        "especial":        dados.get("ESPECIAL") or None,
         "precos":          precos,
     }
 
 
-def formatar_cardapio() -> str:
-    c = get_cardapio_hoje()
+async def _get_dados(restaurante_id: int) -> dict:
+    agora = time.monotonic()
+    cached = _cache.get(restaurante_id)
+    if cached and (agora - cached[0]) < _CACHE_TTL:
+        return cached[1]
+
+    try:
+        dados = await _buscar_mysql(restaurante_id)
+        _cache[restaurante_id] = (agora, dados)
+        log.info(f"[restaurante={restaurante_id}] Cardápio recarregado do MySQL")
+        return dados
+    except Exception as e:
+        log.error(f"[restaurante={restaurante_id}] Erro ao ler cardápio do MySQL: {e}")
+        if cached:
+            log.warning(f"[restaurante={restaurante_id}] Usando cache anterior")
+            return cached[1]
+        return {"pratos": [], "acompanhamentos": [], "precos": {}}
+
+
+async def get_cardapio_hoje(restaurante_id: int = 1) -> dict:
+    """Retorna dict com pratos, acompanhamentos e precos do dia."""
+    dados = await _get_dados(restaurante_id)
+
+    dias = ["Segunda-feira", "Terça-feira", "Quarta-feira",
+            "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
+    dia_nome = dias[min(date.today().weekday(), 6)]
+
+    return {
+        "dia":             dia_nome,
+        "pratos":          dados["pratos"],
+        "acompanhamentos": dados["acompanhamentos"],
+        "precos":          dados["precos"],
+    }
+
+
+async def formatar_cardapio(restaurante_id: int = 1) -> str:
+    c = await get_cardapio_hoje(restaurante_id)
     precos = c["precos"]
-    linhas = [f"*Cardapio — {c['dia']}*\n"]
+    linhas = [f"*Cardápio — {c['dia']}*\n"]
 
-    if c["especial"]:
-        linhas.append(f"Especial do dia:\n{c['especial']}\n")
+    if c["pratos"]:
+        linhas.append("*Pratos do dia:*")
+        for p in c["pratos"]:
+            linhas.append(f"• {p}")
+    else:
+        linhas.append("_Cardápio ainda não configurado para hoje._")
 
-    linhas.append("*Pratos do dia:*")
-    for p in c["pratos"]:
-        linhas.append(f"• {p}")
+    if c["acompanhamentos"]:
+        linhas.append("\n*Acompanhamentos* (escolha até 2):")
+        for a in c["acompanhamentos"]:
+            linhas.append(f"• {a}")
 
-    linhas.append("\n*Acompanhamentos* (escolha ate 2):")
-    for a in c["acompanhamentos"]:
-        linhas.append(f"• {a}")
+    if precos:
+        linhas.append("\n*Tamanhos e valores:*")
+        for nome, valor in precos.items():
+            linhas.append(f"• {nome} — {brl(valor)}")
 
-    linhas.append("\n*Tamanhos e valores:*")
-    for nome, valor in precos.items():
-        linhas.append(f"• {nome} — {brl(valor)}")
-
-    linhas.append("\nVila Branca: entrega gratis")
+    linhas.append("\nVila Branca: entrega grátis")
     return "\n".join(linhas)
 
 
-def get_acompanhamentos_hoje() -> list:
-    return [a.lower() for a in get_cardapio_hoje()["acompanhamentos"]]
+async def get_acompanhamentos_hoje(restaurante_id: int = 1) -> list:
+    c = await get_cardapio_hoje(restaurante_id)
+    return [a.lower() for a in c["acompanhamentos"]]
 
 
-def get_precos_hoje() -> dict:
-    return get_cardapio_hoje()["precos"]
+async def get_precos_hoje(restaurante_id: int = 1) -> dict:
+    c = await get_cardapio_hoje(restaurante_id)
+    return c["precos"]

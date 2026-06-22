@@ -25,65 +25,57 @@ async def processar(msg: dict, restaurante_id: int = 1):
     _SAUDACOES = {"oi", "ola", "olá", "bom dia", "boa tarde", "boa noite", "hey", "hello", "hi"}
     if texto.lower().strip() in _SAUDACOES and etapa != "aguardando_confirmacao":
         await sess.delete_session(numero)
-        await _inicio(numero, push_name)
+        await _inicio(numero, push_name, restaurante_id)
         return
 
     if etapa == "inicio":
-        await _inicio(numero, push_name)
+        await _inicio(numero, push_name, restaurante_id)
 
     elif etapa == "coletando":
-        await _coletando(numero, sessao, texto)
+        await _coletando(numero, sessao, texto, restaurante_id)
 
     elif etapa == "aguardando_confirmacao":
         await _receber_confirmacao(numero, sessao, texto)
 
     else:
-        # Estado desconhecido (sessão antiga) — reinicia
         log.warning(f"[{numero}] Estado desconhecido '{etapa}', reiniciando sessão")
         await sess.delete_session(numero)
-        await _inicio(numero)
+        await _inicio(numero, restaurante_id=restaurante_id)
 
 
 # ── Etapas ────────────────────────────────────────────────────────────────────
 
-async def _inicio(numero: str, push_name: str = ""):
+async def _inicio(numero: str, push_name: str = "", restaurante_id: int = 1):
     nome = await buscar_nome_cliente(numero) or push_name or ""
     saudacao = f"Olá, *{nome.split()[0]}*! " if nome else "Olá! "
 
-    cardapio = formatar_cardapio()
+    cardapio = await formatar_cardapio(restaurante_id)
     await enviar_texto(numero, f"{saudacao}Bem-vindo ao *GUSTO* 🍽️\n\n{cardapio}")
     await enviar_texto(numero, "Qual prato você vai querer hoje?")
-    await sess.set_session(numero, {"etapa": "coletando"})
+    await sess.set_session(numero, {"etapa": "coletando", "restaurante_id": restaurante_id})
 
 
-async def _coletando(numero: str, sessao: dict, texto: str):
-    """
-    A cada mensagem: extrai dados, mescla com sessão, pergunta só o que falta.
-    """
-    # Extrai campos da mensagem atual
+async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int = 1):
     extraido = await extrair_pedido(texto)
     log.info(f"[{numero}] extraido={extraido}")
 
-    # Se não extraiu nada útil, é uma dúvida — responde e aguarda pedido
     if _nada_extraido(extraido):
-        cardapio = formatar_cardapio()
+        cardapio = await formatar_cardapio(restaurante_id)
         resposta = await responder_pergunta(texto, cardapio)
         if resposta:
             await enviar_texto(numero, resposta)
         else:
             await enviar_texto(numero, "Não entendi bem. Pode me dizer qual prato você gostaria?")
-        return  # mantém etapa=coletando, aguarda próxima mensagem
+        return
 
-    # Mescla na sessão (nunca sobrescreve com None o que já estava preenchido)
-    _mesclar(sessao, extraido)
+    await _mesclar(sessao, extraido, restaurante_id)
 
-    # Verifica o que falta
     faltando = _campos_faltando(sessao)
 
     if faltando:
         sessao["etapa"] = "coletando"
         await sess.set_session(numero, sessao)
-        await enviar_texto(numero, _montar_pergunta_faltando(sessao, faltando))
+        await enviar_texto(numero, await _montar_pergunta_faltando(sessao, faltando, restaurante_id))
     else:
         sessao["etapa"] = "aguardando_confirmacao"
         await sess.set_session(numero, sessao)
@@ -114,10 +106,9 @@ async def _receber_confirmacao(numero: str, sessao: dict, texto: str):
         await _enviar_resumo(numero, sessao)
 
 
-# ── Lógica de campos faltando ─────────────────────────────────────────────────
+# ── Lógica de campos ──────────────────────────────────────────────────────────
 
-def _mesclar(sessao: dict, extraido: dict):
-    """Copia do extraido para sessao, sem sobrescrever campos já preenchidos com None."""
+async def _mesclar(sessao: dict, extraido: dict, restaurante_id: int = 1):
     campos = ["mistura", "tamanho", "acomp_1", "acomp_2",
               "observacoes", "tipo_entrega", "endereco", "hora_retirada"]
     for campo in campos:
@@ -125,13 +116,11 @@ def _mesclar(sessao: dict, extraido: dict):
         if valor is not None and not sessao.get(campo):
             sessao[campo] = valor
 
-    # marca explicitamente que não quer acompanhamento
     if extraido.get("sem_acompanhamento"):
         sessao["sem_acompanhamento"] = True
 
-    # normaliza tamanho para title case e valida
     if sessao.get("tamanho"):
-        precos = get_precos_hoje()
+        precos = await get_precos_hoje(restaurante_id)
         t = sessao["tamanho"].strip().title()
         if t in precos:
             sessao["tamanho"]        = t
@@ -139,9 +128,6 @@ def _mesclar(sessao: dict, extraido: dict):
         else:
             sessao.pop("tamanho", None)
             sessao.pop("valor_unitario", None)
-
-    # se mistura ainda não está e texto é simples, usa o texto direto
-    # (tratado em _coletando)
 
 
 def _campos_faltando(sessao: dict) -> list:
@@ -167,17 +153,18 @@ def _campos_faltando(sessao: dict) -> list:
     return faltando
 
 
-def _montar_pergunta_faltando(sessao: dict, faltando: list) -> str:
+async def _montar_pergunta_faltando(sessao: dict, faltando: list, restaurante_id: int = 1) -> str:
     partes = ["Ainda preciso de algumas informações:\n"]
 
     for campo in faltando:
         if campo == "mistura":
             partes.append("• *Qual prato* você quer?")
         elif campo == "tamanho":
-            opcoes = " | ".join(f"{k} ({brl(v)})" for k, v in get_precos_hoje().items())
+            precos = await get_precos_hoje(restaurante_id)
+            opcoes = " | ".join(f"{k} ({brl(v)})" for k, v in precos.items())
             partes.append(f"• *Tamanho:* {opcoes}")
         elif campo == "acomp":
-            acomps = get_acompanhamentos_hoje()
+            acomps = await get_acompanhamentos_hoje(restaurante_id)
             lista  = ", ".join(a.title() for a in acomps)
             partes.append(f"• *Acompanhamentos* (até 2): {lista}")
         elif campo == "entrega":
@@ -201,7 +188,7 @@ async def _enviar_resumo(numero: str, sessao: dict):
     acomps_texto = " + ".join(acomps) if acomps else "Nenhum"
 
     entrega = (
-        f"Retirada as {sessao.get('hora_retirada')}"
+        f"Retirada às {sessao.get('hora_retirada')}"
         if sessao.get("tipo_entrega") == "retirada"
         else f"Entrega em: {sessao.get('endereco')}"
     )
