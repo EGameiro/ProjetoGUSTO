@@ -7,7 +7,7 @@ log = logging.getLogger(__name__)
 
 # Cache por restaurante_id: { restaurante_id: (timestamp, dados) }
 _cache: dict[int, tuple[float, dict]] = {}
-_CACHE_TTL = 1800  # 30 minutos
+_CACHE_TTL = 900  # 15 minutos
 
 # weekday() → dia_semana no banco (0=Seg … 5=Sab)
 _DIA_SEMANA = {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5}
