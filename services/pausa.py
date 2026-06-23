@@ -25,17 +25,15 @@ def _parse_duracao(texto: str) -> int | None:
 
 
 async def eh_admin(numero: str, restaurante_id: int) -> bool:
-    """Verifica se o número é de um admin do restaurante."""
+    """Verifica se o número é do proprietário do restaurante (campo telefone em restaurantes)."""
     row = await fetchone(
         """
-        SELECT au.id FROM admin_users au
-        JOIN restaurantes r ON r.id = %s
-        WHERE au.restaurante_id = %s
-          AND au.is_active = 1
-          AND REPLACE(REPLACE(au.telefone, ' ', ''), '-', '') = %s
+        SELECT id FROM restaurantes
+        WHERE id = %s
+          AND REPLACE(REPLACE(REPLACE(telefone, ' ', ''), '-', ''), '(', '') = %s
         LIMIT 1
         """,
-        (restaurante_id, restaurante_id, numero),
+        (restaurante_id, numero),
     )
     return row is not None
 
