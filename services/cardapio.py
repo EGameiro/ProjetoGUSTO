@@ -40,19 +40,10 @@ async def _buscar_mysql(restaurante_id: int) -> dict:
     # Preços: usa o primeiro prato com preço definido como referência por tamanho
     # Como o WhatsApp não tem tamanho por prato, os preços são globais do restaurante.
     # Mantemos os tamanhos padrão mas sobrescrevemos com valores do banco se existirem.
-    precos_banco = {r["nome"]: float(r["preco"]) for r in rows if r["preco"] is not None}
-
-    precos = {
-        "Mini":      precos_banco.get("Mini",      21.90),
-        "Normal":    precos_banco.get("Normal",    23.90),
-        "Executiva": precos_banco.get("Executiva", 24.90),
-        "Churrasco": precos_banco.get("Churrasco", 27.90),
-    }
-
     return {
         "pratos":          pratos,
         "acompanhamentos": acompanhamentos,
-        "precos":          precos,
+        "precos":          {"Mini": 0, "Normal": 0, "Executiva": 0},
     }
 
 
@@ -109,9 +100,9 @@ async def formatar_cardapio(restaurante_id: int = 1) -> str:
             linhas.append(f"• {a}")
 
     if precos:
-        linhas.append("\n*Tamanhos e valores:*")
-        for nome, valor in precos.items():
-            linhas.append(f"• {nome} — {brl(valor)}")
+        linhas.append("\n*Tamanhos disponíveis:*")
+        for nome in precos.keys():
+            linhas.append(f"• {nome}")
 
     linhas.append("\nVila Branca: entrega grátis")
     return "\n".join(linhas)
