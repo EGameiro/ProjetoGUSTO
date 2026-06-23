@@ -16,12 +16,7 @@ async def eh_convenio(numero: str) -> bool:
             (numero,)
         )
         if row:
-            log.info(f"[{numero}] Número de convênio — enviando orientação")
-            await enviar_texto(
-                numero,
-                "Este número de WhatsApp está associado a uma empresa conveniada e não pode realizar pedidos por aqui. "
-                "Para fazer seu pedido, acesse o portal da sua empresa ou entre em contato com o restaurante. 🍽️"
-            )
+            log.info(f"[{numero}] Número de convênio — ignorando mensagem")
             return True
     except Exception as e:
         log.error(f"[{numero}] Erro ao consultar empresas_convenio: {e}")
