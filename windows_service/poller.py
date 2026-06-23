@@ -31,10 +31,11 @@ from dotenv import load_dotenv
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_BASE_DIR, ".env"))
 
-# Adiciona o diretório-pai ao path para importar db.impressao e services.cupom
+# Adiciona o diretório do script e o pai ao path para importar impressao_client e services.cupom
+sys.path.insert(0, _BASE_DIR)
 sys.path.insert(0, os.path.join(_BASE_DIR, ".."))
 
-from db.impressao import buscar_pendentes, marcar_impresso, buscar_nome_empresa
+from impressao_client import buscar_pendentes, marcar_impresso, buscar_nome_empresa
 from services.cupom import montar_cupom_individual, montar_cupom_convenio
 
 INTERVALO_SEGUNDOS = int(os.getenv("INTERVALO_IMPRESSAO", 15))
@@ -86,11 +87,12 @@ def imprimir_texto(texto: str):
         dc.DeleteDC()
 
     except ImportError:
-        # Modo debug: imprime no console
         log.warning("win32print não encontrado — imprimindo no console")
         print("\n" + "=" * 42)
         print(texto)
         print("=" * 42 + "\n")
+    except Exception as e:
+        log.error(f"Erro ao imprimir: {e}")
 
 
 # ── Loop principal ───────────────────────────────────────────────────────────
