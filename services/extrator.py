@@ -17,21 +17,23 @@ _HEADERS = {
     "content-type": "application/json",
 }
 
-_SYSTEM_EXTRATOR = """\
+_SYSTEM_EXTRATOR_BASE = """\
 Você é um assistente que extrai dados de pedido de uma mensagem de WhatsApp de restaurante.
 Extraia APENAS o que estiver claramente mencionado. Não invente dados.
 Responda SOMENTE com JSON válido, sem texto adicional.
 
 Campos a extrair:
-- mistura: nome do prato/proteína (string ou null)
-- tamanho: "Mini", "Normal", "Executiva" ou "Churrasco" (string ou null)
-- acomp_1: primeiro acompanhamento (string ou null)
+- mistura: nome do prato/proteína mencionado (string ou null)
+- tamanho: "Mini", "Normal" ou "Executiva" (string ou null)
+- acomp_1: primeiro acompanhamento (use o nome EXATO da lista fornecida, faça correspondência parcial) (string ou null)
 - acomp_2: segundo acompanhamento, se houver (string ou null)
-- sem_acompanhamento: true se o cliente disse explicitamente que não quer acompanhamento (ex: "sem acompanhamento", "não quero acompanhamento", "só o prato"), false ou null caso contrário
-- observacoes: observações especiais, ex "sem feijão" (string ou null)
+- sem_acompanhamento: true se o cliente disse que não quer acompanhamento (string ou null)
+- observacoes: observações especiais (string ou null)
 - tipo_entrega: "entrega" ou "retirada" (string ou null)
 - endereco: endereço completo se for entrega (string ou null)
 - hora_retirada: horário se for retirada (string ou null)
+
+IMPORTANTE para acompanhamentos: se o cliente mencionar algo parecido com um item da lista (ex: "farofa", "maionese", "salada"), use o nome EXATO correspondente da lista.
 """
 
 _SYSTEM_ASSISTENTE = """\
@@ -47,7 +49,7 @@ Ao final, redirecione sutilmente para o pedido.
 """
 
 
-async def extrair_pedido(texto: str) -> dict:
+async def extrair_pedido(texto: str, pratos: list[str] | None = None, acompanhamentos: list[str] | None = None) -> dict:
     """
     Tenta extrair campos do pedido da mensagem.
     Retorna dict com chaves: mistura, tamanho, acomp_1, acomp_2,
@@ -62,11 +64,17 @@ async def extrair_pedido(texto: str) -> dict:
         "endereco": None, "hora_retirada": None,
     }
 
+    system = _SYSTEM_EXTRATOR_BASE
+    if pratos:
+        system += f"\nPratos disponíveis hoje: {', '.join(pratos)}"
+    if acompanhamentos:
+        system += f"\nAcompanhamentos disponíveis (use o nome EXATO): {', '.join(acompanhamentos)}"
+
     try:
         payload = {
             "model": "claude-haiku-4-5-20251001",
             "max_tokens": 300,
-            "system": _SYSTEM_EXTRATOR,
+            "system": system,
             "messages": [{"role": "user", "content": texto}],
         }
         async with httpx.AsyncClient(timeout=10) as client:

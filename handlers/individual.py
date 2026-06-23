@@ -1,7 +1,7 @@
 import logging
 from services import session as sess
 from services.uazapi import enviar_texto
-from services.cardapio import formatar_cardapio, get_acompanhamentos_hoje, get_precos_hoje
+from services.cardapio import formatar_cardapio, get_acompanhamentos_hoje, get_precos_hoje, get_cardapio_hoje
 from services.extrator import extrair_pedido, responder_pergunta, _nada_extraido
 from db.pedidos import salvar_pedido_individual, buscar_nome_cliente
 
@@ -56,7 +56,10 @@ async def _inicio(numero: str, push_name: str = "", restaurante_id: int = 1):
 
 
 async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int = 1):
-    extraido = await extrair_pedido(texto)
+    c = await get_cardapio_hoje(restaurante_id)
+    pratos       = [nome for nome, _ in c["pratos"]]
+    acompanhamentos = c["acompanhamentos"]
+    extraido = await extrair_pedido(texto, pratos=pratos, acompanhamentos=acompanhamentos)
     log.info(f"[{numero}] extraido={extraido}")
 
     if _nada_extraido(extraido):
@@ -120,14 +123,18 @@ async def _mesclar(sessao: dict, extraido: dict, restaurante_id: int = 1):
         sessao["sem_acompanhamento"] = True
 
     if sessao.get("tamanho"):
-        precos = await get_precos_hoje(restaurante_id)
         t = sessao["tamanho"].strip().title()
-        if t in precos:
-            sessao["tamanho"]        = t
-            sessao["valor_unitario"] = precos[t]
-        else:
-            sessao.pop("tamanho", None)
-            sessao.pop("valor_unitario", None)
+        sessao["tamanho"] = t
+
+    # Preço vem do prato selecionado, não do tamanho
+    if sessao.get("mistura") and not sessao.get("valor_unitario"):
+        c = await get_cardapio_hoje(restaurante_id)
+        mistura_lower = sessao["mistura"].lower()
+        for nome, preco in c["pratos"]:
+            if nome.lower() in mistura_lower or mistura_lower in nome.lower():
+                if preco:
+                    sessao["valor_unitario"] = preco
+                break
 
 
 def _campos_faltando(sessao: dict) -> list:
@@ -160,8 +167,8 @@ async def _montar_pergunta_faltando(sessao: dict, faltando: list, restaurante_id
         if campo == "mistura":
             partes.append("• *Qual prato* você quer?")
         elif campo == "tamanho":
-            precos = await get_precos_hoje(restaurante_id)
-            opcoes = " | ".join(f"{k} ({brl(v)})" for k, v in precos.items())
+            c = await get_cardapio_hoje(restaurante_id)
+            opcoes = " | ".join(c["tamanhos"])
             partes.append(f"• *Tamanho:* {opcoes}")
         elif campo == "acomp":
             acomps = await get_acompanhamentos_hoje(restaurante_id)
