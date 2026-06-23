@@ -24,12 +24,15 @@ import os
 import sys
 import time
 import logging
+import msvcrt
 from dotenv import load_dotenv
 
-load_dotenv()
+# Carrega .env do diretório do próprio script (necessário quando roda como serviço Windows)
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(_BASE_DIR, ".env"))
 
 # Adiciona o diretório-pai ao path para importar db.impressao e services.cupom
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(_BASE_DIR, ".."))
 
 from db.impressao import buscar_pendentes, marcar_impresso, buscar_nome_empresa
 from services.cupom import montar_cupom_individual, montar_cupom_convenio
@@ -41,7 +44,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler("gusto_impressao.log", encoding="utf-8"),
+        logging.FileHandler(os.path.join(_BASE_DIR, "gusto_impressao.log"), encoding="utf-8"),
         logging.StreamHandler(),
     ],
 )
@@ -106,7 +109,20 @@ def processar_pendentes():
             log.error(f"Erro ao processar pedido #{pid}: {e}")
 
 
+def _adquirir_lock():
+    """Garante que apenas uma instância do poller rode por vez usando um arquivo de lock."""
+    lock_path = os.path.join(_BASE_DIR, "gusto_impressao.lock")
+    lock_file = open(lock_path, "w")
+    try:
+        msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+    except OSError:
+        log.error("Outra instância do poller já está rodando. Encerrando.")
+        sys.exit(1)
+    return lock_file  # manter referência para o lock não ser liberado
+
+
 def loop_console():
+    lock = _adquirir_lock()
     log.info(f"GUSTO Poller iniciado (intervalo={INTERVALO_SEGUNDOS}s)")
     while True:
         processar_pendentes()
