@@ -1,14 +1,11 @@
 """
-Funções usadas pelo Windows Service para gerir a fila de impressão.
-O agente FastAPI NUNCA importa este módulo — só o Windows Service o usa.
-
-Contrato:
-  - buscar_pendentes()  → lista de pedidos com impresso = 0
-  - marcar_impresso(id) → seta impresso = 1
+Funções síncronas: usadas pelo Windows Service (poller.py) via mysql-connector.
+Funções assíncronas: usadas pelo FastAPI (main.py) via pool aiomysql.
 """
 
 import mysql.connector
 import os
+from db.connection import fetchall, execute
 
 
 def _conn():
@@ -85,3 +82,46 @@ def marcar_impresso(pedido_id: int):
         conn.commit()
     finally:
         conn.close()
+
+
+# ── Funções async para o FastAPI ─────────────────────────────────────────────
+
+async def buscar_pendentes_async() -> list[dict]:
+    """Retorna pedidos com impresso=0 para a API de impressão."""
+    pedidos = await fetchall("""
+        SELECT p.id, p.tipo, p.empresa_id, p.numero_whatsapp,
+               p.data_pedido, p.horario_pedido,
+               p.endereco_entrega, p.hora_retirada, p.forma_pgto
+          FROM pedidos p
+         WHERE p.impresso = 0
+           AND p.status != 'cancelado'
+         ORDER BY p.criado_em ASC
+    """)
+
+    resultado = []
+    for p in pedidos:
+        itens = await fetchall("""
+            SELECT nome_pessoa, mistura, tamanho,
+                   acomp_1, acomp_2, observacoes, valor_unitario
+              FROM itens_pedido
+             WHERE pedido_id = %s
+        """, (p["id"],))
+
+        # Serializa campos não-JSON-serializáveis
+        p["data_pedido"]    = str(p["data_pedido"])    if p.get("data_pedido")    else None
+        p["horario_pedido"] = str(p["horario_pedido"]) if p.get("horario_pedido") else None
+        for item in itens:
+            if item.get("valor_unitario") is not None:
+                item["valor_unitario"] = float(item["valor_unitario"])
+
+        resultado.append({"pedido": dict(p), "itens": [dict(i) for i in itens]})
+
+    return resultado
+
+
+async def marcar_impresso_async(pedido_id: int):
+    """Marca um pedido como impresso."""
+    await execute(
+        "UPDATE pedidos SET impresso = 1 WHERE id = %s",
+        (pedido_id,)
+    )

@@ -22,5 +22,8 @@ WEBHOOK_URL     = os.getenv("WEBHOOK_URL", "")   # URL pública deste servidor
 # LLM
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
+# API de impressão
+API_KEY_IMPRESSORA = os.getenv("API_KEY_IMPRESSORA", "")
+
 # App
 PORT = int(os.getenv("PORT", 8000))

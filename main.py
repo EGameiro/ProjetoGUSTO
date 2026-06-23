@@ -1,7 +1,7 @@
 import logging
 import uvicorn
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -9,6 +9,7 @@ from pydantic import BaseModel
 import config
 from db.connection import get_pool, close_pool
 from db import dashboard as dash_db
+from db import impressao as impressao_db
 from services.redis_client import get_redis, close_redis
 from services.uazapi import normalizar_payload
 from handlers.classifier import eh_convenio
@@ -184,6 +185,29 @@ async def atualizar_status(pedido_id: int, body: StatusUpdate):
         raise HTTPException(400, f"Status inválido. Use: {', '.join(STATUS_VALIDOS)}")
     await dash_db.atualizar_status(pedido_id, body.status)
     return {"ok": True, "pedido_id": pedido_id, "status": body.status}
+
+
+# ── API de Impressão ─────────────────────────────────────────────────────────
+
+def _validar_api_key(x_api_key: str = Header(default="")):
+    if not config.API_KEY_IMPRESSORA or x_api_key != config.API_KEY_IMPRESSORA:
+        raise HTTPException(status_code=403, detail="API Key inválida")
+
+
+@app.get("/api/impressao/pendentes")
+async def impressao_pendentes(x_api_key: str = Header(default="")):
+    """Retorna pedidos com impresso=0 para o serviço de impressão."""
+    _validar_api_key(x_api_key)
+    pendentes = await impressao_db.buscar_pendentes_async()
+    return {"pedidos": pendentes}
+
+
+@app.post("/api/impressao/{pedido_id}/marcar")
+async def impressao_marcar(pedido_id: int, x_api_key: str = Header(default="")):
+    """Marca um pedido como impresso."""
+    _validar_api_key(x_api_key)
+    await impressao_db.marcar_impresso_async(pedido_id)
+    return {"ok": True, "pedido_id": pedido_id}
 
 
 @app.get("/health")
