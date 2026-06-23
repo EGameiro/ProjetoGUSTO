@@ -34,16 +34,15 @@ async def _buscar_mysql(restaurante_id: int) -> dict:
         (restaurante_id, dia),
     )
 
-    pratos = [r["nome"] for r in rows if r["tipo"] == "prato"]
+    # Lista de tuplas (nome, preco) para cada prato
+    pratos = [(r["nome"], float(r["preco"]) if r["preco"] else None) for r in rows if r["tipo"] == "prato"]
     acompanhamentos = [r["nome"] for r in rows if r["tipo"] == "acompanhamento"]
+    tamanhos = ["Mini", "Normal", "Executiva"]
 
-    # Preços: usa o primeiro prato com preço definido como referência por tamanho
-    # Como o WhatsApp não tem tamanho por prato, os preços são globais do restaurante.
-    # Mantemos os tamanhos padrão mas sobrescrevemos com valores do banco se existirem.
     return {
         "pratos":          pratos,
         "acompanhamentos": acompanhamentos,
-        "precos":          {"Mini": 0, "Normal": 0, "Executiva": 0},
+        "tamanhos":        tamanhos,
     }
 
 
@@ -78,19 +77,21 @@ async def get_cardapio_hoje(restaurante_id: int = 1) -> dict:
         "dia":             dia_nome,
         "pratos":          dados["pratos"],
         "acompanhamentos": dados["acompanhamentos"],
-        "precos":          dados["precos"],
+        "tamanhos":        dados["tamanhos"],
     }
 
 
 async def formatar_cardapio(restaurante_id: int = 1) -> str:
     c = await get_cardapio_hoje(restaurante_id)
-    precos = c["precos"]
     linhas = [f"*Cardápio — {c['dia']}*\n"]
 
     if c["pratos"]:
         linhas.append("*Pratos do dia:*")
-        for p in c["pratos"]:
-            linhas.append(f"• {p}")
+        for nome, preco in c["pratos"]:
+            if preco:
+                linhas.append(f"• {nome} — {brl(preco)}")
+            else:
+                linhas.append(f"• {nome}")
     else:
         linhas.append("_Cardápio ainda não configurado para hoje._")
 
@@ -99,10 +100,10 @@ async def formatar_cardapio(restaurante_id: int = 1) -> str:
         for a in c["acompanhamentos"]:
             linhas.append(f"• {a}")
 
-    if precos:
+    if c["tamanhos"]:
         linhas.append("\n*Tamanhos disponíveis:*")
-        for nome in precos.keys():
-            linhas.append(f"• {nome}")
+        for t in c["tamanhos"]:
+            linhas.append(f"• {t}")
 
     linhas.append("\nVila Branca: entrega grátis")
     return "\n".join(linhas)
@@ -115,4 +116,8 @@ async def get_acompanhamentos_hoje(restaurante_id: int = 1) -> list:
 
 async def get_precos_hoje(restaurante_id: int = 1) -> dict:
     c = await get_cardapio_hoje(restaurante_id)
-    return c["precos"]
+    # Retorna o preço do primeiro prato como referência (todos têm o mesmo preço)
+    for nome, preco in c["pratos"]:
+        if preco:
+            return {t: preco for t in c["tamanhos"]}
+    return {t: 0 for t in c["tamanhos"]}
