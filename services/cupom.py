@@ -32,11 +32,12 @@ def montar_cupom_individual(pedido: dict, itens: list[dict]) -> str:
         SEP_SIMPLES,
     ]
 
+    numero = pedido.get("numero_whatsapp") or ""
     for item in itens:
         nome = (item.get("nome_pessoa") or "CLIENTE").upper()
         mistura = item.get("mistura") or ""
         tamanho = item.get("tamanho") or ""
-        linhas.append(nome)
+        linhas.append(f"{nome}  {numero}")
         linhas.append(f"{mistura}  {tamanho}")
 
         acomps = [a for a in [item.get("acomp_1"), item.get("acomp_2")] if a]
