@@ -54,21 +54,37 @@ log = logging.getLogger("gusto.poller")
 # ── Impressão ────────────────────────────────────────────────────────────────
 
 def imprimir_texto(texto: str):
-    """Envia texto puro para a impressora via win32print."""
+    """Envia texto para a impressora via win32ui (GDI) ou RAW para térmica."""
     try:
         import win32print
+        import win32ui
+        import win32con
+
         impressora = NOME_IMPRESSORA or win32print.GetDefaultPrinter()
-        hprinter = win32print.OpenPrinter(impressora)
-        try:
-            hjob = win32print.StartDocPrinter(hprinter, 1, ("Pedido GUSTO", None, "RAW"))
-            win32print.StartPagePrinter(hprinter)
-            # Adiciona alimentação de papel + corte
-            dados = (texto + "\n\n\n\x1b\x69").encode("cp850", errors="replace")
-            win32print.WritePrinter(hprinter, dados)
-            win32print.EndPagePrinter(hprinter)
-            win32print.EndDocPrinter(hprinter)
-        finally:
-            win32print.ClosePrinter(hprinter)
+
+        dc = win32ui.CreateDC()
+        dc.CreatePrinterDC(impressora)
+        dc.StartDoc("Pedido GUSTO")
+        dc.StartPage()
+
+        # Fonte monoespaçada para alinhar colunas do cupom
+        font = win32ui.CreateFont({
+            "name": "Courier New",
+            "height": 200,
+            "weight": win32con.FW_NORMAL,
+        })
+        dc.SelectObject(font)
+
+        x, y = 100, 100
+        espacamento = 220
+        for linha in texto.splitlines():
+            dc.TextOut(x, y, linha)
+            y += espacamento
+
+        dc.EndPage()
+        dc.EndDoc()
+        dc.DeleteDC()
+
     except ImportError:
         # Modo debug: imprime no console
         log.warning("win32print não encontrado — imprimindo no console")

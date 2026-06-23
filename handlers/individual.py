@@ -52,7 +52,7 @@ async def _inicio(numero: str, push_name: str = "", restaurante_id: int = 1):
     cardapio = await formatar_cardapio(restaurante_id)
     await enviar_texto(numero, f"{saudacao}Bem-vindo ao *GUSTO* 🍽️\n\n{cardapio}")
     await enviar_texto(numero, "Qual prato você vai querer hoje?")
-    await sess.set_session(numero, {"etapa": "coletando", "restaurante_id": restaurante_id})
+    await sess.set_session(numero, {"etapa": "coletando", "restaurante_id": restaurante_id, "nome": nome})
 
 
 async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int = 1):
