@@ -3,12 +3,12 @@ Funções síncronas: usadas pelo Windows Service (poller.py) via mysql-connecto
 Funções assíncronas: usadas pelo FastAPI (main.py) via pool aiomysql.
 """
 
-import mysql.connector
 import os
 from db.connection import fetchall, execute
 
 
 def _conn():
+    import mysql.connector
     return mysql.connector.connect(
         host=os.getenv("MYSQL_HOST", "localhost"),
         port=int(os.getenv("MYSQL_PORT", 3306)),
