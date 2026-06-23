@@ -70,7 +70,7 @@ async def salvar_pedido_individual(sessao: dict, numero: str) -> int:
             sessao.get("endereco"),
             sessao.get("hora_retirada"),
             None,
-            "pendente",
+            "preparo",
             0,
         )
     )
