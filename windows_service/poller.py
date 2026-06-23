@@ -27,8 +27,13 @@ import logging
 import msvcrt
 from dotenv import load_dotenv
 
-# Carrega .env do diretório do próprio script (necessário quando roda como serviço Windows)
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Quando compilado com PyInstaller, sys.executable aponta para o .exe.
+# Quando rodando como .py, __file__ é o caminho correto.
+if getattr(sys, "frozen", False):
+    _BASE_DIR = os.path.dirname(sys.executable)
+else:
+    _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 load_dotenv(os.path.join(_BASE_DIR, ".env"))
 
 # Adiciona o diretório do script e o pai ao path para importar impressao_client e services.cupom
