@@ -13,6 +13,7 @@ from services.redis_client import get_redis, close_redis
 from services.uazapi import normalizar_payload
 from handlers.classifier import eh_convenio
 from handlers import individual
+from services.pausa import eh_admin, pausar, retomar, esta_pausado, _parse_duracao
 
 logging.basicConfig(
     level=logging.INFO,
@@ -80,6 +81,35 @@ async def _processar_webhook(payload: dict, restaurante_id: int):
     log.info(f"[restaurante={restaurante_id}] Mensagem de {msg['numero']} | tipo={msg['tipo_midia']} | texto={msg['texto']!r}")
 
     if await eh_convenio(msg["numero"]):
+        return
+
+    numero = msg["numero"]
+    texto  = (msg.get("texto") or "").strip().lower()
+
+    # ── Comandos administrativos ──────────────────────────────
+    if await eh_admin(numero, restaurante_id):
+        if texto.startswith("pausar "):
+            duracao_str = texto[7:].strip()
+            segundos = _parse_duracao(duracao_str)
+            if segundos:
+                await pausar(restaurante_id, segundos)
+                mins = segundos // 60
+                resp = f"✅ Agente pausado por {mins} minuto(s). Envie *retomar* para reativar antes do prazo."
+            else:
+                resp = "⚠ Formato inválido. Use: *pausar 1h*, *pausar 2hs* ou *pausar 30m*"
+            from services.uazapi import enviar_texto
+            await enviar_texto(numero, resp)
+            return
+
+        if texto == "retomar":
+            await retomar(restaurante_id)
+            from services.uazapi import enviar_texto
+            await enviar_texto(numero, "✅ Agente reativado com sucesso!")
+            return
+
+    # ── Verifica pausa ────────────────────────────────────────
+    if await esta_pausado(restaurante_id):
+        log.info(f"[restaurante={restaurante_id}] Agente pausado — ignorando mensagem de {numero}")
         return
 
     await individual.processar(msg, restaurante_id=restaurante_id)
