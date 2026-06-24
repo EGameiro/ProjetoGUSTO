@@ -52,13 +52,22 @@ async def _inicio(numero: str, push_name: str = "", restaurante_id: int = 1):
     cardapio = await formatar_cardapio(restaurante_id)
     await enviar_texto(numero, f"{saudacao}Bem-vindo ao *GUSTO* 🍽️\n\n{cardapio}")
     await enviar_texto(numero, "Qual prato você vai querer hoje?")
-    await sess.set_session(numero, {"etapa": "coletando", "restaurante_id": restaurante_id, "nome": nome})
+    await sess.set_session(numero, {
+        "etapa": "coletando",
+        "restaurante_id": restaurante_id,
+        "nome": nome,
+        "itens": [],
+        "tipo_entrega": None,
+        "endereco": None,
+        "hora_retirada": None,
+    })
 
 
 async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int = 1):
     c = await get_cardapio_hoje(restaurante_id)
-    pratos       = [nome for nome, _ in c["pratos"]]
+    pratos          = [nome for nome, _ in c["pratos"]]
     acompanhamentos = c["acompanhamentos"]
+
     extraido = await extrair_pedido(texto, pratos=pratos, acompanhamentos=acompanhamentos)
     log.info(f"[{numero}] extraido={extraido}")
 
@@ -112,43 +121,76 @@ async def _receber_confirmacao(numero: str, sessao: dict, texto: str):
 # ── Lógica de campos ──────────────────────────────────────────────────────────
 
 async def _mesclar(sessao: dict, extraido: dict, restaurante_id: int = 1):
-    campos = ["mistura", "tamanho", "acomp_1", "acomp_2",
-              "observacoes", "tipo_entrega", "endereco", "hora_retirada"]
-    for campo in campos:
-        valor = extraido.get(campo)
-        if valor is not None and not sessao.get(campo):
-            sessao[campo] = valor
+    """Mescla os dados extraídos na sessão, suportando múltiplos itens."""
+    c = await get_cardapio_hoje(restaurante_id)
 
-    if extraido.get("sem_acompanhamento"):
-        sessao["sem_acompanhamento"] = True
+    # Mescla campos globais
+    for campo in ("tipo_entrega", "endereco", "hora_retirada"):
+        if extraido.get(campo) and not sessao.get(campo):
+            sessao[campo] = extraido[campo]
 
-    if sessao.get("tamanho"):
-        t = sessao["tamanho"].strip().title()
-        sessao["tamanho"] = t
+    itens_sessao = sessao.get("itens", [])
+    itens_extraidos = extraido.get("itens", [])
 
-    # Preço vem do prato selecionado, não do tamanho
-    if sessao.get("mistura") and not sessao.get("valor_unitario"):
-        c = await get_cardapio_hoje(restaurante_id)
-        mistura_lower = sessao["mistura"].lower()
-        for nome, preco in c["pratos"]:
-            if nome.lower() in mistura_lower or mistura_lower in nome.lower():
-                if preco:
-                    sessao["valor_unitario"] = preco
-                break
+    for item_ext in itens_extraidos:
+        mistura_ext = (item_ext.get("mistura") or "").lower()
+        if not mistura_ext:
+            continue
+
+        # Procura item existente na sessão com a mesma mistura
+        item_existente = next(
+            (i for i in itens_sessao if (i.get("mistura") or "").lower() == mistura_ext),
+            None
+        )
+
+        if item_existente:
+            # Atualiza campos faltantes do item existente
+            for campo in ("tamanho", "acomp_1", "acomp_2", "observacoes"):
+                if item_ext.get(campo) and not item_existente.get(campo):
+                    item_existente[campo] = item_ext[campo]
+            if item_ext.get("sem_acompanhamento"):
+                item_existente["sem_acompanhamento"] = True
+        else:
+            # Novo item — resolve preço pelo cardápio
+            preco = None
+            for nome_prato, p in c["pratos"]:
+                if nome_prato.lower() in mistura_ext or mistura_ext in nome_prato.lower():
+                    preco = p
+                    # Usa o nome oficial do prato
+                    item_ext["mistura"] = nome_prato
+                    break
+            item_ext["valor_unitario"] = preco
+            itens_sessao.append(item_ext)
+
+    # Se chegou tamanho/acomp global (sem prato especificado), aplica a todos os itens sem esse campo
+    tamanho_global = extraido.get("itens", [{}])[0].get("tamanho") if len(extraido.get("itens", [])) == 1 and not extraido["itens"][0].get("mistura") else None
+    if tamanho_global:
+        for item in itens_sessao:
+            if not item.get("tamanho"):
+                item["tamanho"] = tamanho_global
+
+    sessao["itens"] = itens_sessao
 
 
 def _campos_faltando(sessao: dict) -> list:
+    """Retorna lista de campos faltando, considerando todos os itens."""
     faltando = []
 
-    if not sessao.get("mistura"):
+    if not sessao.get("itens"):
         faltando.append("mistura")
+        return faltando
 
-    if not sessao.get("tamanho"):
-        faltando.append("tamanho")
+    # Verifica campos faltando por item
+    for i, item in enumerate(sessao["itens"]):
+        label = item.get("mistura") or f"Item {i+1}"
 
-    if not sessao.get("acomp_1") and not sessao.get("sem_acompanhamento"):
-        faltando.append("acomp")
+        if not item.get("tamanho"):
+            faltando.append(("tamanho", label))
 
+        if not item.get("acomp_1") and not item.get("sem_acompanhamento"):
+            faltando.append(("acomp", label))
+
+    # Campos globais
     tipo = sessao.get("tipo_entrega")
     if not tipo:
         faltando.append("entrega")
@@ -166,14 +208,19 @@ async def _montar_pergunta_faltando(sessao: dict, faltando: list, restaurante_id
     for campo in faltando:
         if campo == "mistura":
             partes.append("• *Qual prato* você quer?")
-        elif campo == "tamanho":
+
+        elif isinstance(campo, tuple) and campo[0] == "tamanho":
+            _, label = campo
             c = await get_cardapio_hoje(restaurante_id)
             opcoes = " | ".join(c["tamanhos"])
-            partes.append(f"• *Tamanho:* {opcoes}")
-        elif campo == "acomp":
+            partes.append(f"• *Tamanho* do {label}: {opcoes}")
+
+        elif isinstance(campo, tuple) and campo[0] == "acomp":
+            _, label = campo
             acomps = await get_acompanhamentos_hoje(restaurante_id)
             lista  = ", ".join(a.title() for a in acomps)
-            partes.append(f"• *Acompanhamentos* (até 2): {lista}")
+            partes.append(f"• *Acompanhamentos* do {label} (até 2): {lista}")
+
         elif campo == "entrega":
             partes.append("• *Entrega ou retirada?*\n  Se entrega, informe o endereço.\n  Se retirada, informe o horário.")
         elif campo == "endereco":
@@ -187,12 +234,20 @@ async def _montar_pergunta_faltando(sessao: dict, faltando: list, restaurante_id
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _enviar_resumo(numero: str, sessao: dict):
-    acomps = []
-    if sessao.get("acomp_1"):
-        acomps.append(sessao["acomp_1"])
-    if sessao.get("acomp_2"):
-        acomps.append(sessao["acomp_2"])
-    acomps_texto = " + ".join(acomps) if acomps else "Nenhum"
+    itens = sessao.get("itens", [])
+    total = 0.0
+    linhas_itens = []
+
+    for i, item in enumerate(itens, 1):
+        acomps = [a for a in [item.get("acomp_1"), item.get("acomp_2")] if a]
+        acomps_texto = " + ".join(acomps) if acomps else "Nenhum"
+        valor = item.get("valor_unitario") or 0
+        total += valor
+        obs = f"\n   Obs: {item['observacoes']}" if item.get("observacoes") else ""
+        linhas_itens.append(
+            f"{i}. *{item.get('mistura')}* — {item.get('tamanho')}\n"
+            f"   Acomp: {acomps_texto} | {brl(valor)}{obs}"
+        )
 
     entrega = (
         f"Retirada às {sessao.get('hora_retirada')}"
@@ -200,14 +255,11 @@ async def _enviar_resumo(numero: str, sessao: dict):
         else f"Entrega em: {sessao.get('endereco')}"
     )
 
-    obs = f"\nObs: {sessao['observacoes']}" if sessao.get("observacoes") else ""
-
+    itens_texto = "\n".join(linhas_itens)
     resumo = (
         f"*Resumo do pedido:*\n\n"
-        f"Prato: {sessao.get('mistura')} — {sessao.get('tamanho')}\n"
-        f"Acompanhamentos: {acomps_texto}\n"
-        f"Valor: {brl(sessao.get('valor_unitario', 0))}"
-        f"{obs}\n\n"
+        f"{itens_texto}\n\n"
+        f"*Total: {brl(total)}*\n"
         f"{entrega}\n\n"
         f"*Confirma?* Responda *sim* ou *não*."
     )

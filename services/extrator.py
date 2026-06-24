@@ -22,18 +22,30 @@ Você é um assistente que extrai dados de pedido de uma mensagem de WhatsApp de
 Extraia APENAS o que estiver claramente mencionado. Não invente dados.
 Responda SOMENTE com JSON válido, sem texto adicional.
 
-Campos a extrair:
-- mistura: nome do prato/proteína mencionado (string ou null)
-- tamanho: "Mini", "Normal" ou "Executiva" (string ou null)
-- acomp_1: primeiro acompanhamento (use o nome EXATO da lista fornecida, faça correspondência parcial) (string ou null)
-- acomp_2: segundo acompanhamento, se houver (string ou null)
-- sem_acompanhamento: true se o cliente disse que não quer acompanhamento (string ou null)
-- observacoes: observações especiais (string ou null)
-- tipo_entrega: "entrega" ou "retirada" (string ou null)
-- endereco: endereço completo se for entrega (string ou null)
-- hora_retirada: horário se for retirada (string ou null)
+O cliente pode pedir UM ou MAIS pratos na mesma mensagem.
+Retorne SEMPRE no formato abaixo:
 
-IMPORTANTE para acompanhamentos: se o cliente mencionar algo parecido com um item da lista (ex: "farofa", "maionese", "salada"), use o nome EXATO correspondente da lista.
+{
+  "itens": [
+    {
+      "mistura": "nome do prato (string ou null)",
+      "tamanho": "Mini | Normal | Executiva (string ou null)",
+      "acomp_1": "primeiro acompanhamento, nome EXATO da lista (string ou null)",
+      "acomp_2": "segundo acompanhamento, se houver (string ou null)",
+      "sem_acompanhamento": true se disse que não quer acompanhamento (bool ou null),
+      "observacoes": "observações especiais (string ou null)"
+    }
+  ],
+  "tipo_entrega": "entrega | retirada (string ou null)",
+  "endereco": "endereço completo se for entrega (string ou null)",
+  "hora_retirada": "horário se for retirada (string ou null)"
+}
+
+REGRAS:
+- Se o cliente pediu N pratos, retorne N objetos dentro de "itens"
+- Se mencionou apenas um prato, retorne lista com 1 item
+- Para acompanhamentos: faça correspondência parcial com a lista fornecida e use o nome EXATO
+- tamanho e acompanhamentos mencionados sem especificar o prato se aplicam a TODOS os itens
 """
 
 _SYSTEM_ASSISTENTE = """\
@@ -49,21 +61,33 @@ Ao final, redirecione sutilmente para o pedido.
 """
 
 
+_ITEM_VAZIO = {
+    "mistura": None, "tamanho": None,
+    "acomp_1": None, "acomp_2": None,
+    "sem_acompanhamento": None, "observacoes": None,
+}
+
+_RESULTADO_VAZIO = {
+    "itens": [], "tipo_entrega": None,
+    "endereco": None, "hora_retirada": None,
+}
+
+
+def _normalizar_item(item: dict) -> dict:
+    if item.get("tamanho"):
+        item["tamanho"] = item["tamanho"].strip().title()
+    for campo in ("acomp_1", "acomp_2"):
+        if item.get(campo):
+            item[campo] = item[campo].strip().title()
+    return {**_ITEM_VAZIO, **item}
+
+
 async def extrair_pedido(texto: str, pratos: list[str] | None = None, acompanhamentos: list[str] | None = None) -> dict:
     """
-    Tenta extrair campos do pedido da mensagem.
-    Retorna dict com chaves: mistura, tamanho, acomp_1, acomp_2,
-    observacoes, tipo_entrega, endereco, hora_retirada.
-    Valores None = não encontrado.
+    Extrai pedido da mensagem. Retorna dict com:
+      itens: lista de {mistura, tamanho, acomp_1, acomp_2, sem_acompanhamento, observacoes}
+      tipo_entrega, endereco, hora_retirada
     """
-    vazio = {
-        "mistura": None, "tamanho": None,
-        "acomp_1": None, "acomp_2": None,
-        "sem_acompanhamento": None,
-        "observacoes": None, "tipo_entrega": None,
-        "endereco": None, "hora_retirada": None,
-    }
-
     system = _SYSTEM_EXTRATOR_BASE
     if pratos:
         system += f"\nPratos disponíveis hoje: {', '.join(pratos)}"
@@ -73,7 +97,7 @@ async def extrair_pedido(texto: str, pratos: list[str] | None = None, acompanham
     try:
         payload = {
             "model": "claude-haiku-4-5-20251001",
-            "max_tokens": 300,
+            "max_tokens": 500,
             "system": system,
             "messages": [{"role": "user", "content": texto}],
         }
@@ -81,31 +105,30 @@ async def extrair_pedido(texto: str, pratos: list[str] | None = None, acompanham
             resp = await client.post(_URL, json=payload, headers=_HEADERS)
             if not resp.is_success:
                 log.warning(f"Extrator: erro HTTP {resp.status_code}")
-                return vazio
+                return _RESULTADO_VAZIO
             data = resp.json()
             raw = data["content"][0]["text"].strip()
-            # remove markdown code fences (```json ... ```)
             raw = re.sub(r"^```(?:json)?\s*", "", raw)
             raw = re.sub(r"\s*```$", "", raw).strip()
             log.info(f"Extrator raw: {raw}")
             resultado = json.loads(raw)
-            # normaliza tamanho para title case
-            if resultado.get("tamanho"):
-                resultado["tamanho"] = resultado["tamanho"].strip().title()
-            # normaliza acompanhamentos
-            for campo in ("acomp_1", "acomp_2"):
-                if resultado.get(campo):
-                    resultado[campo] = resultado[campo].strip().title()
-            return {**vazio, **resultado}
+
+            itens = [_normalizar_item(i) for i in resultado.get("itens", [])]
+            return {
+                "itens": itens,
+                "tipo_entrega": resultado.get("tipo_entrega"),
+                "endereco": resultado.get("endereco"),
+                "hora_retirada": resultado.get("hora_retirada"),
+            }
     except Exception as e:
         log.warning(f"Extrator: falha ao extrair pedido — {type(e).__name__}: {e}")
-        return vazio
+        return _RESULTADO_VAZIO
 
 
 def _nada_extraido(resultado: dict) -> bool:
     """Retorna True se o extrator não encontrou nenhum campo útil."""
-    campos_uteis = ["mistura", "tamanho", "acomp_1", "sem_acompanhamento", "tipo_entrega", "endereco"]
-    return all(resultado.get(c) is None for c in campos_uteis)
+    tem_item = any(i.get("mistura") for i in resultado.get("itens", []))
+    return not tem_item and not resultado.get("tipo_entrega") and not resultado.get("endereco")
 
 
 async def responder_pergunta(texto: str, cardapio_texto: str) -> str | None:

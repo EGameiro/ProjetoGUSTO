@@ -75,24 +75,26 @@ async def salvar_pedido_individual(sessao: dict, numero: str) -> int:
         )
     )
 
-    await db.execute(
-        """
-        INSERT INTO itens_pedido
-            (pedido_id, nome_pessoa, mistura, tamanho,
-             acomp_1, acomp_2, observacoes, valor_unitario)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """,
-        (
-            pedido_id,
-            sessao.get("nome", "Cliente"),
-            sessao.get("mistura"),
-            sessao.get("tamanho"),
-            sessao.get("acomp_1"),
-            sessao.get("acomp_2"),
-            sessao.get("observacoes") or None,
-            sessao.get("valor_unitario"),
+    nome_cliente = sessao.get("nome") or "Cliente"
+    for item in sessao.get("itens", []):
+        await db.execute(
+            """
+            INSERT INTO itens_pedido
+                (pedido_id, nome_pessoa, mistura, tamanho,
+                 acomp_1, acomp_2, observacoes, valor_unitario)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                pedido_id,
+                nome_cliente,
+                item.get("mistura"),
+                item.get("tamanho"),
+                item.get("acomp_1"),
+                item.get("acomp_2"),
+                item.get("observacoes") or None,
+                item.get("valor_unitario"),
+            )
         )
-    )
 
     await upsert_cliente(numero, sessao)
 
