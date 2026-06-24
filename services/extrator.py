@@ -29,6 +29,7 @@ Retorne SEMPRE no formato abaixo:
   "itens": [
     {
       "mistura": "nome do prato (string ou null)",
+      "quantidade": 1,
       "tamanho": "Mini | Normal | Executiva (string ou null)",
       "acomp_1": "primeiro acompanhamento, nome EXATO da lista (string ou null)",
       "acomp_2": "segundo acompanhamento, se houver (string ou null)",
@@ -42,8 +43,9 @@ Retorne SEMPRE no formato abaixo:
 }
 
 REGRAS:
-- Se o cliente pediu N pratos, retorne N objetos dentro de "itens"
-- Se mencionou apenas um prato, retorne lista com 1 item
+- Se o cliente pediu N pratos DIFERENTES, retorne N objetos dentro de "itens"
+- Se o cliente pediu N unidades do MESMO prato (ex: "3 feijoadas"), retorne 1 objeto com quantidade=3
+- Se mencionou apenas um prato sem quantidade, use quantidade=1
 - Para acompanhamentos: faça correspondência parcial com a lista fornecida e use o nome EXATO
 - tamanho e acompanhamentos mencionados sem especificar o prato se aplicam a TODOS os itens
 """
@@ -62,7 +64,7 @@ Ao final, redirecione sutilmente para o pedido.
 
 
 _ITEM_VAZIO = {
-    "mistura": None, "tamanho": None,
+    "mistura": None, "quantidade": 1, "tamanho": None,
     "acomp_1": None, "acomp_2": None,
     "sem_acompanhamento": None, "observacoes": None,
 }

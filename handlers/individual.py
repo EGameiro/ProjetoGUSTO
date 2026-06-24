@@ -143,27 +143,34 @@ async def _mesclar(sessao: dict, extraido: dict, restaurante_id: int = 1):
 
     for item_ext in itens_com_mistura:
         mistura_ext = item_ext["mistura"].lower()
+        quantidade = max(1, int(item_ext.get("quantidade") or 1))
 
-        item_existente = next(
-            (i for i in itens_sessao if (i.get("mistura") or "").lower() == mistura_ext),
-            None
-        )
+        # Resolve nome oficial e preço do cardápio
+        preco = None
+        nome_oficial = item_ext["mistura"]
+        for nome_prato, p in c["pratos"]:
+            if nome_prato.lower() in mistura_ext or mistura_ext in nome_prato.lower():
+                preco = p
+                nome_oficial = nome_prato
+                break
 
-        if item_existente:
-            for campo in ("tamanho", "acomp_1", "acomp_2", "observacoes"):
-                if item_ext.get(campo) and not item_existente.get(campo):
-                    item_existente[campo] = item_ext[campo]
-            if item_ext.get("sem_acompanhamento"):
-                item_existente["sem_acompanhamento"] = True
+        # Procura todos os itens existentes com essa mistura
+        existentes = [i for i in itens_sessao if (i.get("mistura") or "").lower() == nome_oficial.lower()]
+
+        if existentes:
+            # Atualiza campos faltantes em todos os itens com essa mistura
+            for item_existente in existentes:
+                for campo in ("tamanho", "acomp_1", "acomp_2", "observacoes"):
+                    if item_ext.get(campo) and not item_existente.get(campo):
+                        item_existente[campo] = item_ext[campo]
+                if item_ext.get("sem_acompanhamento"):
+                    item_existente["sem_acompanhamento"] = True
         else:
-            preco = None
-            for nome_prato, p in c["pratos"]:
-                if nome_prato.lower() in mistura_ext or mistura_ext in nome_prato.lower():
-                    preco = p
-                    item_ext["mistura"] = nome_prato
-                    break
-            item_ext["valor_unitario"] = preco
-            itens_sessao.append(item_ext)
+            # Novo(s) item(ns) — cria quantidade cópias
+            for _ in range(quantidade):
+                novo = {**item_ext, "mistura": nome_oficial, "valor_unitario": preco}
+                novo.pop("quantidade", None)
+                itens_sessao.append(novo)
 
     # Tamanho/acomp sem prato → aplica ao primeiro item incompleto da sessão
     for item_ext in itens_sem_mistura:
@@ -175,32 +182,45 @@ async def _mesclar(sessao: dict, extraido: dict, restaurante_id: int = 1):
             None
         )
         if alvo:
-            for campo in ("tamanho", "acomp_1", "acomp_2", "observacoes"):
-                if item_ext.get(campo) and not alvo.get(campo):
-                    alvo[campo] = item_ext[campo]
-            if item_ext.get("sem_acompanhamento"):
-                alvo["sem_acompanhamento"] = True
+            # Aplica a TODOS os itens com a mesma mistura do alvo
+            mistura_alvo = (alvo.get("mistura") or "").lower()
+            alvos = [i for i in itens_sessao if (i.get("mistura") or "").lower() == mistura_alvo] if mistura_alvo else [alvo]
+            for a in alvos:
+                for campo in ("tamanho", "acomp_1", "acomp_2", "observacoes"):
+                    if item_ext.get(campo) and not a.get(campo):
+                        a[campo] = item_ext[campo]
+                if item_ext.get("sem_acompanhamento"):
+                    a["sem_acompanhamento"] = True
 
     sessao["itens"] = itens_sessao
 
 
 def _campos_faltando(sessao: dict) -> list:
-    """Retorna lista de campos faltando, considerando todos os itens."""
+    """
+    Retorna lista de campos faltando. Itens com a mesma mistura são agrupados:
+    pergunta-se uma vez e aplica-se a todos.
+    Entradas: strings simples (campos globais) ou tuplas ("tipo", "label", qtd).
+    """
     faltando = []
 
     if not sessao.get("itens"):
         faltando.append("mistura")
         return faltando
 
-    # Verifica campos faltando por item
-    for i, item in enumerate(sessao["itens"]):
-        label = item.get("mistura") or f"Item {i+1}"
+    # Agrupa itens por mistura para não perguntar N vezes a mesma coisa
+    vistos: set[str] = set()
+    for item in sessao["itens"]:
+        mistura = item.get("mistura") or ""
+        chave = mistura.lower()
+        qtd = sum(1 for i in sessao["itens"] if (i.get("mistura") or "").lower() == chave)
+        label = f"{qtd}x {mistura}" if qtd > 1 else mistura
 
-        if not item.get("tamanho"):
-            faltando.append(("tamanho", label))
-
-        if not item.get("acomp_1") and not item.get("sem_acompanhamento"):
-            faltando.append(("acomp", label))
+        if chave not in vistos:
+            vistos.add(chave)
+            if not item.get("tamanho"):
+                faltando.append(("tamanho", label, chave))
+            if not item.get("acomp_1") and not item.get("sem_acompanhamento"):
+                faltando.append(("acomp", label, chave))
 
     # Campos globais
     tipo = sessao.get("tipo_entrega")
@@ -217,17 +237,17 @@ def _campos_faltando(sessao: dict) -> list:
 async def _montar_pergunta_faltando(sessao: dict, faltando: list, restaurante_id: int = 1) -> str:
     c = await get_cardapio_hoje(restaurante_id)
 
-    # Se há campos de item pendentes, perguntar sobre o primeiro item incompleto
     campos_item = [f for f in faltando if isinstance(f, tuple)]
     campos_globais = [f for f in faltando if not isinstance(f, tuple)]
 
     if campos_item:
-        # Pega o primeiro item que tem campos faltando
+        # Pega o primeiro grupo de mistura com campos faltando
         primeiro_label = campos_item[0][1]
-        campos_desse_item = [f for f in campos_item if f[1] == primeiro_label]
+        primeiro_chave = campos_item[0][2]
+        campos_desse_item = [f for f in campos_item if f[2] == primeiro_chave]
 
-        partes = [f"Sobre o *{primeiro_label}*:\n"]
-        for tipo, _ in campos_desse_item:
+        partes = [f"Sobre *{primeiro_label}*:\n"]
+        for tipo, _, _ in campos_desse_item:
             if tipo == "tamanho":
                 opcoes = " | ".join(c["tamanhos"])
                 partes.append(f"• *Tamanho:* {opcoes}")
@@ -257,15 +277,27 @@ async def _enviar_resumo(numero: str, sessao: dict):
     total = 0.0
     linhas_itens = []
 
-    for i, item in enumerate(itens, 1):
+    # Agrupa itens iguais para exibir "3x Feijoada" em vez de 3 linhas idênticas
+    vistos: dict[str, dict] = {}
+    for item in itens:
+        chave = f"{item.get('mistura')}|{item.get('tamanho')}|{item.get('acomp_1')}|{item.get('acomp_2')}"
+        if chave in vistos:
+            vistos[chave]["_qtd"] += 1
+        else:
+            vistos[chave] = {**item, "_qtd": 1}
+
+    for i, item in enumerate(vistos.values(), 1):
+        qtd = item["_qtd"]
         acomps = [a for a in [item.get("acomp_1"), item.get("acomp_2")] if a]
         acomps_texto = " + ".join(acomps) if acomps else "Nenhum"
-        valor = item.get("valor_unitario") or 0
-        total += valor
+        valor_unit = item.get("valor_unitario") or 0
+        valor_linha = valor_unit * qtd
+        total += valor_linha
         obs = f"\n   Obs: {item['observacoes']}" if item.get("observacoes") else ""
+        prefixo = f"{qtd}x " if qtd > 1 else ""
         linhas_itens.append(
-            f"{i}. *{item.get('mistura')}* — {item.get('tamanho')}\n"
-            f"   Acomp: {acomps_texto} | {brl(valor)}{obs}"
+            f"{i}. {prefixo}*{item.get('mistura')}* — {item.get('tamanho')}\n"
+            f"   Acomp: {acomps_texto} | {brl(valor_linha)}{obs}"
         )
 
     entrega = (
