@@ -60,9 +60,21 @@ async def _inicio(numero: str, push_name: str = "", restaurante_id: int = 1):
             "saiu":    "saiu para entrega 🛵",
         }
         status_texto = _STATUS_LABEL.get(pedido_aberto["status"], pedido_aberto["status"])
+
+        linhas_itens = []
+        for item in pedido_aberto.get("itens", []):
+            acomps = [a for a in [item.get("acomp_1"), item.get("acomp_2")] if a]
+            acomp_txt = " + ".join(acomps) if acomps else ""
+            linha = f"• *{item.get('mistura')}* — {item.get('tamanho')}"
+            if acomp_txt:
+                linha += f" | {acomp_txt}"
+            linhas_itens.append(linha)
+
+        itens_txt = "\n".join(linhas_itens)
         await enviar_texto(
             numero,
-            f"{saudacao}Vi que você tem um pedido aqui que está *{status_texto}*.\n\n"
+            f"{saudacao}Vi que você tem um pedido aqui que está *{status_texto}*:\n\n"
+            f"{itens_txt}\n\n"
             f"Deseja fazer outro pedido ou era só para saber como está o seu pedido?"
         )
         await sess.set_session(numero, {

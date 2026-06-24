@@ -11,7 +11,7 @@ async def buscar_nome_cliente(numero: str) -> str | None:
 
 
 async def buscar_pedido_aberto(numero: str) -> dict | None:
-    """Retorna o pedido individual mais recente de hoje ainda não entregue, ou None."""
+    """Retorna o pedido individual mais recente de hoje ainda não entregue, com seus itens."""
     row = await db.fetchone(
         """
         SELECT id, status FROM pedidos
@@ -24,7 +24,21 @@ async def buscar_pedido_aberto(numero: str) -> dict | None:
         """,
         (numero,)
     )
-    return dict(row) if row else None
+    if not row:
+        return None
+
+    pedido = dict(row)
+    itens = await db.fetchall(
+        """
+        SELECT mistura, tamanho, acomp_1, acomp_2
+        FROM itens_pedido
+        WHERE pedido_id = %s
+        ORDER BY id
+        """,
+        (pedido["id"],)
+    )
+    pedido["itens"] = [dict(i) for i in itens]
+    return pedido
 
 
 async def salvar_lote_convenio(pedidos: list[dict], numero: str, empresa_id: int) -> list[int]:
