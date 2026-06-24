@@ -23,7 +23,7 @@ async def processar(msg: dict, restaurante_id: int = 1):
     log.info(f"[{numero}] etapa={etapa} | texto={texto!r}")
 
     _SAUDACOES = {"oi", "ola", "olá", "bom dia", "boa tarde", "boa noite", "hey", "hello", "hi"}
-    if texto.lower().strip() in _SAUDACOES and etapa != "aguardando_confirmacao":
+    if texto.lower().strip() in _SAUDACOES:
         await sess.delete_session(numero)
         await _inicio(numero, push_name, restaurante_id)
         return
