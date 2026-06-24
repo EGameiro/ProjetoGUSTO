@@ -16,7 +16,6 @@ Recebe pedidos de marmitas executivas de clientes individuais, processa com IA e
 | Cardápio | Google Sheets (gspread) |
 | LLM | Claude Haiku 4.5 (Anthropic API) |
 | WhatsApp | UAZAPI |
-| Scheduler | — (removido) |
 | Deploy | Railway |
 
 ---
@@ -25,7 +24,7 @@ Recebe pedidos de marmitas executivas de clientes individuais, processa com IA e
 
 ```
 gusto-agent/
-├── main.py                  → FastAPI app, webhook, endpoints de dashboard
+├── main.py                  → FastAPI app, webhook, endpoints de dashboard e impressão
 ├── config.py                → Variáveis de ambiente (.env)
 ├── requirements.txt
 │
@@ -39,22 +38,22 @@ gusto-agent/
 │   ├── session.py           → Sessão por número no Redis (TTL 4h)
 │   ├── cardapio.py          → Leitura do Google Sheets + cache 30min
 │   ├── extrator.py          → Extração de dados do pedido via Claude Haiku
-│   ├── cupom.py             → Cupons de desconto
+│   ├── cupom.py             → Montagem do cupom de impressão (individual e convênio)
 │   └── redis_client.py      → Singleton do cliente Redis
 │
 ├── db/
 │   ├── connection.py        → Pool aiomysql + helpers fetchone/fetchall/execute
-│   ├── pedidos.py           → INSERT pedidos/itens_pedido, upsert clientes, buscar nome
+│   ├── pedidos.py           → INSERT pedidos/itens_pedido, upsert clientes, busca nome e pedido aberto
 │   └── dashboard.py         → Queries do dashboard operacional
-│
-├── scheduler/
-│   └── jobs.py              → sem jobs ativos (scheduler removido)
 │
 ├── dashboard/
 │   └── index.html           → Dashboard operacional (fila de pedidos do dia)
 │
 └── windows_service/
-    └── poller.py            → Serviço Windows para impressão de pedidos
+    ├── poller.exe            → Compilado PyInstaller — serviço de impressão para o cliente
+    ├── impressao_client.py   → Cliente HTTP para os endpoints de impressão da API
+    ├── nssm.exe              → Gerenciador de serviço Windows
+    └── .env                  → API_URL, API_KEY, NOME_IMPRESSORA, INTERVALO_IMPRESSAO
 ```
 
 ---
@@ -66,33 +65,106 @@ POST /webhook
   └── normalizar_payload()        → extrai numero, texto, push_name, tipo_midia
         └── eh_convenio(numero)?  → se sim: ignora silenciosamente (return 200)
               └── individual.processar(msg)
-                    ├── etapa=inicio         → _inicio(): saudação com nome + cardápio
-                    ├── etapa=coletando      → _coletando(): extrai campos via LLM, pergunta o que falta
-                    └── etapa=aguardando_confirmacao → _receber_confirmacao(): salva pedido
+                    ├── saudação detectada      → _inicio()
+                    ├── etapa=inicio            → _inicio()
+                    ├── etapa=coletando         → _coletando()
+                    ├── etapa=aguardando_confirmacao → _receber_confirmacao()
+                    └── etapa=aguardando_intencao   → _receber_intencao()
 ```
 
 ### Etapas da sessão (Redis)
 
 | Etapa | Descrição |
 |---|---|
-| `inicio` | Primeira mensagem ou saudação — envia cardápio |
-| `coletando` | Coleta incremental dos campos do pedido |
+| `inicio` | Primeira mensagem — verifica pedido aberto, depois envia cardápio |
+| `aguardando_intencao` | Lead tem pedido aberto — aguarda "novo pedido" ou "só queria saber" |
+| `coletando` | Coleta incremental dos campos do pedido (suporta múltiplos itens) |
 | `aguardando_confirmacao` | Exibe resumo e aguarda "sim" ou "não" |
 
-### Campos do pedido (sessão Redis)
+### Detecção de pedido aberto
 
+Ao iniciar a conversa (`_inicio`), o bot consulta `buscar_pedido_aberto()`:
+- Se existe pedido `individual` do dia com `status != 'entregue'`, envia mensagem com status e lista de itens do pedido
+- Status exibidos: `preparo → "em preparo 🍳"` | `saiu → "saiu para entrega 🛵"`
+- Se o lead responde que quer novo pedido → inicia coleta normalmente
+- Se responde que só queria saber → encerra sessão com mensagem de confirmação
+
+### Saudações reconhecidas
+
+`oi`, `oie`, `ola`, `olá`, `eai`, `eaí`, `opa`, `bom dia`, `boa tarde`, `boa noite`, `hey`, `hello`, `hi`
+
+Qualquer saudação **sempre reinicia o fluxo** (deleta sessão e chama `_inicio`), independente da etapa atual.
+
+### Estrutura da sessão Redis (etapa `coletando`)
+
+```json
+{
+  "etapa": "coletando",
+  "restaurante_id": 1,
+  "nome": "Eduardo",
+  "itens": [
+    {
+      "mistura": "Feijoada Completa",
+      "tamanho": "Normal",
+      "acomp_1": "Farofa",
+      "acomp_2": null,
+      "sem_acompanhamento": null,
+      "observacoes": null,
+      "valor_unitario": 34.25
+    }
+  ],
+  "tipo_entrega": "retirada",
+  "endereco": null,
+  "hora_retirada": "13h"
+}
 ```
-mistura            # prato escolhido
-tamanho            # Mini | Normal | Executiva | Churrasco
-valor_unitario     # preenchido automaticamente pelo tamanho
-acomp_1            # primeiro acompanhamento (opcional)
-acomp_2            # segundo acompanhamento (opcional)
-sem_acompanhamento # true se lead disse explicitamente que não quer acompanhamento
-observacoes        # ex: "sem feijão"
-tipo_entrega       # "entrega" | "retirada"
-endereco           # endereço (se entrega)
-hora_retirada      # horário (se retirada)
+
+---
+
+## Múltiplos Itens por Pedido
+
+O bot suporta pedidos com N pratos na mesma sessão.
+
+**Casos suportados:**
+- "Quero um macarrão e uma carne assada" → 2 itens distintos
+- "Quero 3 feijoadas" → 3 cópias do mesmo item (`quantidade=3` extraído pelo LLM)
+
+**Coleta por item:**
+- O bot pergunta tamanho e acompanhamentos de um grupo de mistura por vez
+- Itens com a mesma mistura são agrupados: "Sobre *3x Feijoada Completa*: Tamanho | Acomp"
+- Tamanho/acomp respondidos sem citar o prato são aplicados ao primeiro item incompleto
+
+**Banco:** 1 linha em `pedidos` + N linhas em `itens_pedido` (uma por marmita).
+
+**Resumo para o cliente:** itens iguais são agrupados ("3x Feijoada — Normal | R$ 102,75").
+
+---
+
+## Extrator de Pedido (LLM)
+
+Usa **Claude Haiku 4.5** para extrair campos estruturados de mensagens em linguagem natural.
+
+Retorna JSON no formato:
+```json
+{
+  "itens": [
+    {
+      "mistura": "nome do prato",
+      "quantidade": 1,
+      "tamanho": "Mini | Normal | Executiva",
+      "acomp_1": "nome exato da lista",
+      "acomp_2": null,
+      "sem_acompanhamento": null,
+      "observacoes": null
+    }
+  ],
+  "tipo_entrega": "entrega | retirada",
+  "endereco": null,
+  "hora_retirada": null
+}
 ```
+
+Se nenhum campo útil for extraído (`_nada_extraido()`), a mensagem é tratada como dúvida e respondida pelo assistente virtual (também Claude Haiku).
 
 ---
 
@@ -100,17 +172,7 @@ hora_retirada      # horário (se retirada)
 
 Números cadastrados em `empresas_convenio` com `ativo = 1` são **ignorados silenciosamente** pelo bot — nenhuma mensagem é enviada de volta.
 
-O atendimento automatizado para convênios foi descontinuado. A tabela `empresas_convenio` permanece no banco apenas como lista de bloqueio.
-
----
-
-## Saudação Personalizada
-
-`_inicio()` busca o nome do lead na seguinte ordem de prioridade:
-1. `clientes.nome` no banco (cliente recorrente)
-2. `chat.wa_name` do payload UAZAPI (nome do perfil WhatsApp)
-3. `message.senderName` do payload UAZAPI (fallback)
-4. Saudação genérica `"Olá!"` se nenhum disponível
+O atendimento automatizado para convênios foi descontinuado. A tabela permanece no banco apenas como lista de bloqueio.
 
 ---
 
@@ -140,26 +202,29 @@ O atendimento automatizado para convênios foi descontinuado. A tabela `empresas
 
 `pendente` → `preparo` → `saiu` → `entregue`
 
-Atualizado via `POST /pedidos/{id}/status` pelo dashboard operacional.
+Atualizado via `POST /pedidos/{id}/status` pelo dashboard operacional ou pelo app web.
 
 ---
 
-## Extrator de Pedido (LLM)
+## Serviço de Impressão (Windows)
 
-Usa **Claude Haiku 4.5** para extrair campos estruturados de mensagens em linguagem natural.
+`windows_service/poller.exe` — roda localmente na máquina do restaurante como serviço Windows (via NSSM), consulta a API a cada `INTERVALO_IMPRESSAO` segundos e imprime pedidos com `impresso = 0`.
 
-Campos extraídos:
-- `mistura`, `tamanho`, `acomp_1`, `acomp_2`
-- `sem_acompanhamento` — `true` se o lead disse explicitamente que não quer acompanhamento
-- `observacoes`, `tipo_entrega`, `endereco`, `hora_retirada`
+### Segurança
+- Nenhuma credencial de banco na máquina do cliente
+- Autenticação via `API_KEY` no header `X-Api-Key`
+- Endpoints: `GET /api/impressao/pendentes` e `POST /api/impressao/{id}/marcar`
 
-Se nenhum campo útil for extraído (`_nada_extraido()`), a mensagem é tratada como dúvida e respondida pelo assistente virtual (também Claude Haiku).
-
----
-
-## Pendências
-
-- [ ] **Migrar cardápio do Google Sheets para a tabela `cardapio_web` do MySQL.** O portal web (GustoConvenio.Web) passa a ser a fonte oficial do cardápio. O `services/cardapio.py` precisa ser reescrito para ler de `cardapio_web` via MySQL em vez do Google Sheets. Quando isso estiver feito, as dependências `gspread`, `google-auth` e as credenciais do Google podem ser removidas.
+### Instalação no cliente
+```
+1. Copiar poller.exe, nssm.exe e .env para C:\Gusto\
+2. Editar .env: preencher NOME_IMPRESSORA com o nome exato da impressora
+3. (como Administrador):
+   nssm install GustoImpressao "C:\Gusto\poller.exe"
+   nssm set GustoImpressao AppDirectory "C:\Gusto"
+   nssm start GustoImpressao
+4. Verificar em services.msc: status "Em execução"
+```
 
 ---
 
@@ -171,6 +236,8 @@ Se nenhum campo útil for extraído (`_nada_extraido()`), a mensagem é tratada 
 | `GET` | `/dashboard` | Interface operacional (HTML) |
 | `GET` | `/api/dashboard` | Fila de pedidos do dia + totais (JSON) |
 | `POST` | `/pedidos/{id}/status` | Atualiza status de um pedido |
+| `GET` | `/api/impressao/pendentes` | Lista pedidos com impresso=0 (requer API_KEY) |
+| `POST` | `/api/impressao/{id}/marcar` | Marca pedido como impresso (requer API_KEY) |
 | `GET` | `/health` | Health check (MySQL + Redis) |
 
 ---
@@ -202,6 +269,9 @@ GOOGLE_SHEET_ID=
 GOOGLE_CREDENTIALS_FILE=credentials/google_service_account.json
 GOOGLE_CREDENTIALS_JSON=   # JSON inline (Railway — substitui o arquivo)
 
+# Impressão (validação de API Key do poller)
+API_KEY_IMPRESSORA=
+
 # App
 PORT=8000
 ```
@@ -213,9 +283,10 @@ PORT=8000
 - Entrada: `uvicorn main:app --host 0.0.0.0 --port $PORT` (via `Procfile`)
 - Credenciais Google: variável `GOOGLE_CREDENTIALS_JSON` com o JSON inline
 - Webhook configurado manualmente no painel do UAZAPI apontando para `$WEBHOOK_URL/webhook`
+- Deploy automático a cada push na branch `master`
 
 ---
 
-## Serviço de Impressão (Windows)
+## Pendências
 
-`windows_service/poller.py` — roda localmente na máquina do restaurante, consulta a API periodicamente e imprime pedidos novos com `impresso = 0`.
+- [ ] **Migrar cardápio do Google Sheets para MySQL.** O portal web (GustoConvenio.Web) passa a ser a fonte oficial do cardápio. O `services/cardapio.py` precisa ser reescrito para ler de `cardapio_web` via MySQL. Quando feito, remover `gspread`, `google-auth` e credenciais Google.
