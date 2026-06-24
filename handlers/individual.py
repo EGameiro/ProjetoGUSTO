@@ -137,42 +137,49 @@ async def _mesclar(sessao: dict, extraido: dict, restaurante_id: int = 1):
     itens_sessao = sessao.get("itens", [])
     itens_extraidos = extraido.get("itens", [])
 
-    for item_ext in itens_extraidos:
-        mistura_ext = (item_ext.get("mistura") or "").lower()
-        if not mistura_ext:
-            continue
+    # Itens sem mistura: aplicar tamanho/acomp ao primeiro item incompleto da sessão
+    itens_sem_mistura = [i for i in itens_extraidos if not (i.get("mistura") or "").strip()]
+    itens_com_mistura = [i for i in itens_extraidos if (i.get("mistura") or "").strip()]
 
-        # Procura item existente na sessão com a mesma mistura
+    for item_ext in itens_com_mistura:
+        mistura_ext = item_ext["mistura"].lower()
+
         item_existente = next(
             (i for i in itens_sessao if (i.get("mistura") or "").lower() == mistura_ext),
             None
         )
 
         if item_existente:
-            # Atualiza campos faltantes do item existente
             for campo in ("tamanho", "acomp_1", "acomp_2", "observacoes"):
                 if item_ext.get(campo) and not item_existente.get(campo):
                     item_existente[campo] = item_ext[campo]
             if item_ext.get("sem_acompanhamento"):
                 item_existente["sem_acompanhamento"] = True
         else:
-            # Novo item — resolve preço pelo cardápio
             preco = None
             for nome_prato, p in c["pratos"]:
                 if nome_prato.lower() in mistura_ext or mistura_ext in nome_prato.lower():
                     preco = p
-                    # Usa o nome oficial do prato
                     item_ext["mistura"] = nome_prato
                     break
             item_ext["valor_unitario"] = preco
             itens_sessao.append(item_ext)
 
-    # Se chegou tamanho/acomp global (sem prato especificado), aplica a todos os itens sem esse campo
-    tamanho_global = extraido.get("itens", [{}])[0].get("tamanho") if len(extraido.get("itens", [])) == 1 and not extraido["itens"][0].get("mistura") else None
-    if tamanho_global:
-        for item in itens_sessao:
-            if not item.get("tamanho"):
-                item["tamanho"] = tamanho_global
+    # Tamanho/acomp sem prato → aplica ao primeiro item incompleto da sessão
+    for item_ext in itens_sem_mistura:
+        tem_dado = item_ext.get("tamanho") or item_ext.get("acomp_1") or item_ext.get("sem_acompanhamento")
+        if not tem_dado:
+            continue
+        alvo = next(
+            (i for i in itens_sessao if not i.get("tamanho") or not i.get("acomp_1")),
+            None
+        )
+        if alvo:
+            for campo in ("tamanho", "acomp_1", "acomp_2", "observacoes"):
+                if item_ext.get(campo) and not alvo.get(campo):
+                    alvo[campo] = item_ext[campo]
+            if item_ext.get("sem_acompanhamento"):
+                alvo["sem_acompanhamento"] = True
 
     sessao["itens"] = itens_sessao
 

@@ -127,8 +127,12 @@ async def extrair_pedido(texto: str, pratos: list[str] | None = None, acompanham
 
 def _nada_extraido(resultado: dict) -> bool:
     """Retorna True se o extrator não encontrou nenhum campo útil."""
-    tem_item = any(i.get("mistura") for i in resultado.get("itens", []))
-    return not tem_item and not resultado.get("tipo_entrega") and not resultado.get("endereco")
+    itens = resultado.get("itens", [])
+    tem_dado = any(
+        i.get("mistura") or i.get("tamanho") or i.get("acomp_1") or i.get("sem_acompanhamento")
+        for i in itens
+    )
+    return not tem_dado and not resultado.get("tipo_entrega") and not resultado.get("endereco") and not resultado.get("hora_retirada")
 
 
 async def responder_pergunta(texto: str, cardapio_texto: str) -> str | None:
