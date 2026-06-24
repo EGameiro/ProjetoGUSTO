@@ -22,7 +22,7 @@ async def processar(msg: dict, restaurante_id: int = 1):
 
     log.info(f"[{numero}] etapa={etapa} | texto={texto!r}")
 
-    _SAUDACOES = {"oi", "ola", "olá", "bom dia", "boa tarde", "boa noite", "hey", "hello", "hi"}
+    _SAUDACOES = {"oi", "oie", "ola", "olá", "eai", "eaí", "opa", "bom dia", "boa tarde", "boa noite", "hey", "hello", "hi"}
     if texto.lower().strip() in _SAUDACOES:
         await sess.delete_session(numero)
         await _inicio(numero, push_name, restaurante_id)
@@ -95,6 +95,11 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
 
 
 async def _receber_confirmacao(numero: str, sessao: dict, texto: str):
+    if not sessao.get("itens"):
+        await sess.delete_session(numero)
+        await _inicio(numero, restaurante_id=sessao.get("restaurante_id", 1))
+        return
+
     if texto.lower() in ["sim", "s", "yes", "confirmo", "ok", "pode", "pode ser"]:
         try:
             pedido_id = await salvar_pedido_individual(sessao, numero)
