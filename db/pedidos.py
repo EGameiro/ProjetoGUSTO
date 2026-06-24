@@ -10,6 +10,23 @@ async def buscar_nome_cliente(numero: str) -> str | None:
     return row["nome"] if row and row.get("nome") else None
 
 
+async def buscar_pedido_aberto(numero: str) -> dict | None:
+    """Retorna o pedido individual mais recente de hoje ainda não entregue, ou None."""
+    row = await db.fetchone(
+        """
+        SELECT id, status FROM pedidos
+        WHERE tipo = 'individual'
+          AND numero_whatsapp = %s
+          AND data_pedido = CURDATE()
+          AND status != 'entregue'
+        ORDER BY horario_pedido DESC
+        LIMIT 1
+        """,
+        (numero,)
+    )
+    return dict(row) if row else None
+
+
 async def salvar_lote_convenio(pedidos: list[dict], numero: str, empresa_id: int) -> list[int]:
     """Salva todos os pedidos do lote convênio e retorna lista de IDs gerados."""
     ids = []

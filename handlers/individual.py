@@ -3,7 +3,7 @@ from services import session as sess
 from services.uazapi import enviar_texto
 from services.cardapio import formatar_cardapio, get_acompanhamentos_hoje, get_precos_hoje, get_cardapio_hoje
 from services.extrator import extrair_pedido, responder_pergunta, _nada_extraido
-from db.pedidos import salvar_pedido_individual, buscar_nome_cliente
+from db.pedidos import salvar_pedido_individual, buscar_nome_cliente, buscar_pedido_aberto
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +37,9 @@ async def processar(msg: dict, restaurante_id: int = 1):
     elif etapa == "aguardando_confirmacao":
         await _receber_confirmacao(numero, sessao, texto)
 
+    elif etapa == "aguardando_intencao":
+        await _receber_intencao(numero, sessao, texto, restaurante_id)
+
     else:
         log.warning(f"[{numero}] Estado desconhecido '{etapa}', reiniciando sessão")
         await sess.delete_session(numero)
@@ -47,8 +50,32 @@ async def processar(msg: dict, restaurante_id: int = 1):
 
 async def _inicio(numero: str, push_name: str = "", restaurante_id: int = 1):
     nome = await buscar_nome_cliente(numero) or push_name or ""
-    saudacao = f"Olá, *{nome.split()[0]}*! " if nome else "Olá! "
+    primeiro_nome = nome.split()[0] if nome else ""
+    saudacao = f"Olá, *{primeiro_nome}*! " if primeiro_nome else "Olá! "
 
+    pedido_aberto = await buscar_pedido_aberto(numero)
+    if pedido_aberto:
+        _STATUS_LABEL = {
+            "preparo": "em preparo 🍳",
+            "saiu":    "saiu para entrega 🛵",
+        }
+        status_texto = _STATUS_LABEL.get(pedido_aberto["status"], pedido_aberto["status"])
+        await enviar_texto(
+            numero,
+            f"{saudacao}Vi que você tem um pedido aqui que está *{status_texto}*.\n\n"
+            f"Deseja fazer outro pedido ou era só para saber como está o seu pedido?"
+        )
+        await sess.set_session(numero, {
+            "etapa": "aguardando_intencao",
+            "restaurante_id": restaurante_id,
+            "nome": nome,
+        })
+        return
+
+    await _iniciar_coleta(numero, nome, saudacao, restaurante_id)
+
+
+async def _iniciar_coleta(numero: str, nome: str, saudacao: str, restaurante_id: int):
     cardapio = await formatar_cardapio(restaurante_id)
     await enviar_texto(numero, f"{saudacao}Bem-vindo ao *GUSTO* 🍽️\n\n{cardapio}")
     await enviar_texto(numero, "Qual prato você vai querer hoje?")
@@ -121,6 +148,26 @@ async def _receber_confirmacao(numero: str, sessao: dict, texto: str):
 
     else:
         await _enviar_resumo(numero, sessao)
+
+
+async def _receber_intencao(numero: str, sessao: dict, texto: str, restaurante_id: int):
+    _SIM = {"sim", "s", "yes", "quero", "outro", "outro pedido", "fazer pedido", "pode", "ok"}
+    _NAO = {"não", "nao", "n", "só queria saber", "so queria saber", "era so isso", "era só isso", "obrigado", "obrigada", "valeu"}
+
+    t = texto.lower().strip()
+    nome = sessao.get("nome", "")
+    saudacao = f"*{nome.split()[0]}*" if nome else "você"
+
+    if t in _SIM or any(p in t for p in ["outro", "novo pedido", "fazer", "quero"]):
+        await _iniciar_coleta(numero, nome, f"Ótimo, {saudacao}! ", restaurante_id)
+    elif t in _NAO or any(p in t for p in ["só", "so", "obrigad", "valeu", "saber"]):
+        await sess.delete_session(numero)
+        await enviar_texto(numero, f"Tudo certo, {saudacao}! Qualquer coisa é só chamar. 😊")
+    else:
+        await enviar_texto(
+            numero,
+            "Deseja fazer um *novo pedido* ou era só para saber como está o seu pedido atual?"
+        )
 
 
 # ── Lógica de campos ──────────────────────────────────────────────────────────
