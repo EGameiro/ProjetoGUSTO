@@ -208,31 +208,38 @@ def _campos_faltando(sessao: dict) -> list:
 
 
 async def _montar_pergunta_faltando(sessao: dict, faltando: list, restaurante_id: int = 1) -> str:
-    partes = ["Ainda preciso de algumas informações:\n"]
+    c = await get_cardapio_hoje(restaurante_id)
 
-    for campo in faltando:
+    # Se há campos de item pendentes, perguntar sobre o primeiro item incompleto
+    campos_item = [f for f in faltando if isinstance(f, tuple)]
+    campos_globais = [f for f in faltando if not isinstance(f, tuple)]
+
+    if campos_item:
+        # Pega o primeiro item que tem campos faltando
+        primeiro_label = campos_item[0][1]
+        campos_desse_item = [f for f in campos_item if f[1] == primeiro_label]
+
+        partes = [f"Sobre o *{primeiro_label}*:\n"]
+        for tipo, _ in campos_desse_item:
+            if tipo == "tamanho":
+                opcoes = " | ".join(c["tamanhos"])
+                partes.append(f"• *Tamanho:* {opcoes}")
+            elif tipo == "acomp":
+                lista = ", ".join(a.title() for a in c["acompanhamentos"])
+                partes.append(f"• *Acompanhamentos* (até 2): {lista}")
+        return "\n".join(partes)
+
+    # Só campos globais
+    partes = ["Ainda preciso de algumas informações:\n"]
+    for campo in campos_globais:
         if campo == "mistura":
             partes.append("• *Qual prato* você quer?")
-
-        elif isinstance(campo, tuple) and campo[0] == "tamanho":
-            _, label = campo
-            c = await get_cardapio_hoje(restaurante_id)
-            opcoes = " | ".join(c["tamanhos"])
-            partes.append(f"• *Tamanho* do {label}: {opcoes}")
-
-        elif isinstance(campo, tuple) and campo[0] == "acomp":
-            _, label = campo
-            acomps = await get_acompanhamentos_hoje(restaurante_id)
-            lista  = ", ".join(a.title() for a in acomps)
-            partes.append(f"• *Acompanhamentos* do {label} (até 2): {lista}")
-
         elif campo == "entrega":
             partes.append("• *Entrega ou retirada?*\n  Se entrega, informe o endereço.\n  Se retirada, informe o horário.")
         elif campo == "endereco":
             partes.append("• *Endereço* de entrega?")
         elif campo == "horario":
             partes.append("• *Que horas* você busca?")
-
     return "\n".join(partes)
 
 
