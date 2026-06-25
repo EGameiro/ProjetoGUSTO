@@ -3,7 +3,7 @@ from services import session as sess
 from services.uazapi import enviar_texto
 from services.cardapio import formatar_cardapio, get_acompanhamentos_hoje, get_precos_hoje, get_cardapio_hoje
 from services.extrator import extrair_pedido, responder_pergunta, _nada_extraido
-from db.pedidos import salvar_pedido_individual, buscar_nome_cliente, buscar_pedido_aberto
+from db.pedidos import salvar_pedido_individual, buscar_nome_cliente, buscar_pedido_aberto, buscar_preferencias_cliente
 
 log = logging.getLogger(__name__)
 
@@ -91,6 +91,8 @@ async def _iniciar_coleta(numero: str, nome: str, saudacao: str, restaurante_id:
     cardapio = await formatar_cardapio(restaurante_id)
     await enviar_texto(numero, f"{saudacao}Bem-vindo ao *GUSTO* 🍽️\n\n{cardapio}")
     await enviar_texto(numero, "Qual prato você vai querer hoje?")
+
+    prefs = await buscar_preferencias_cliente(numero)
     await sess.set_session(numero, {
         "etapa": "coletando",
         "restaurante_id": restaurante_id,
@@ -99,10 +101,32 @@ async def _iniciar_coleta(numero: str, nome: str, saudacao: str, restaurante_id:
         "tipo_entrega": None,
         "endereco": None,
         "hora_retirada": None,
+        "pref_tipo_entrega": prefs["tipo_entrega"] if prefs else None,
+        "pref_endereco": prefs["endereco"] if prefs else None,
     })
 
 
 async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int = 1):
+    # Confirmação de preferência de entrega
+    if not sessao.get("tipo_entrega") and sessao.get("pref_tipo_entrega"):
+        _CONFIRMAR = {"sim", "s", "yes", "pode", "ok", "mesmo", "mesmo endereço", "mesmo endereco", "confirmo"}
+        t = texto.lower().strip()
+        if t in _CONFIRMAR or "mesmo" in t:
+            pref_tipo = sessao["pref_tipo_entrega"]
+            sessao["tipo_entrega"] = pref_tipo
+            if pref_tipo == "entrega":
+                sessao["endereco"] = sessao.get("pref_endereco")
+            faltando = _campos_faltando(sessao)
+            if faltando:
+                sessao["etapa"] = "coletando"
+                await sess.set_session(numero, sessao)
+                await enviar_texto(numero, await _montar_pergunta_faltando(sessao, faltando, restaurante_id))
+            else:
+                sessao["etapa"] = "aguardando_confirmacao"
+                await sess.set_session(numero, sessao)
+                await _enviar_resumo(numero, sessao)
+            return
+
     c = await get_cardapio_hoje(restaurante_id)
     pratos          = [nome for nome, _ in c["pratos"]]
     acompanhamentos = c["acompanhamentos"]
@@ -321,7 +345,16 @@ async def _montar_pergunta_faltando(sessao: dict, faltando: list, restaurante_id
         if campo == "mistura":
             partes.append("• *Qual prato* você quer?")
         elif campo == "entrega":
-            partes.append("• *Entrega ou retirada?*\n  Se entrega, informe o endereço.\n  Se retirada, informe o horário.")
+            pref_tipo = sessao.get("pref_tipo_entrega")
+            pref_end  = sessao.get("pref_endereco")
+            if pref_tipo == "retirada":
+                partes.append("• Na última vez você *retirou*. Vai retirar novamente ou prefere entrega?")
+            elif pref_tipo == "entrega" and pref_end:
+                partes.append(f"• Na última vez entregamos em *{pref_end}*. Mesmo endereço ou vai mudar?")
+            elif pref_tipo == "entrega":
+                partes.append("• Na última vez foi *entrega*. Mesmo endereço ou vai mudar? Se mudou, informe o novo.")
+            else:
+                partes.append("• *Entrega ou retirada?*\n  Se entrega, informe o endereço.\n  Se retirada, informe o horário.")
         elif campo == "endereco":
             partes.append("• *Endereço* de entrega?")
         elif campo == "horario":

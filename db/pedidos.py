@@ -10,6 +10,17 @@ async def buscar_nome_cliente(numero: str) -> str | None:
     return row["nome"] if row and row.get("nome") else None
 
 
+async def buscar_preferencias_cliente(numero: str) -> dict | None:
+    """Retorna tipo_entrega_pref e endereco_padrao do cliente, ou None se não cadastrado."""
+    row = await db.fetchone(
+        "SELECT tipo_entrega_pref, endereco_padrao FROM clientes WHERE numero_whatsapp = %s",
+        (numero,)
+    )
+    if not row or not row.get("tipo_entrega_pref"):
+        return None
+    return {"tipo_entrega": row["tipo_entrega_pref"], "endereco": row.get("endereco_padrao")}
+
+
 async def buscar_pedido_aberto(numero: str) -> dict | None:
     """Retorna o pedido individual mais recente de hoje ainda não entregue, com seus itens."""
     row = await db.fetchone(
