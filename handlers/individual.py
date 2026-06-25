@@ -29,7 +29,7 @@ async def processar(msg: dict, restaurante_id: int = 1):
         return
 
     if etapa == "inicio":
-        await _inicio(numero, push_name, restaurante_id)
+        await _inicio(numero, push_name, restaurante_id, texto_inicial=texto)
 
     elif etapa == "coletando":
         await _coletando(numero, sessao, texto, restaurante_id)
@@ -48,7 +48,7 @@ async def processar(msg: dict, restaurante_id: int = 1):
 
 # ── Etapas ────────────────────────────────────────────────────────────────────
 
-async def _inicio(numero: str, push_name: str = "", restaurante_id: int = 1):
+async def _inicio(numero: str, push_name: str = "", restaurante_id: int = 1, texto_inicial: str = ""):
     nome = await buscar_nome_cliente(numero) or push_name or ""
     primeiro_nome = nome.split()[0] if nome else ""
     saudacao = f"Olá, *{primeiro_nome}*! " if primeiro_nome else "Olá! "
@@ -84,16 +84,12 @@ async def _inicio(numero: str, push_name: str = "", restaurante_id: int = 1):
         })
         return
 
-    await _iniciar_coleta(numero, nome, saudacao, restaurante_id)
+    await _iniciar_coleta(numero, nome, saudacao, restaurante_id, texto_inicial)
 
 
-async def _iniciar_coleta(numero: str, nome: str, saudacao: str, restaurante_id: int):
-    cardapio = await formatar_cardapio(restaurante_id)
-    await enviar_texto(numero, f"{saudacao}Bem-vindo ao *GUSTO* 🍽️\n\n{cardapio}")
-    await enviar_texto(numero, "Qual prato você vai querer hoje?")
-
+async def _iniciar_coleta(numero: str, nome: str, saudacao: str, restaurante_id: int, texto_inicial: str = ""):
     prefs = await buscar_preferencias_cliente(numero)
-    await sess.set_session(numero, {
+    sessao_inicial = {
         "etapa": "coletando",
         "restaurante_id": restaurante_id,
         "nome": nome,
@@ -103,7 +99,35 @@ async def _iniciar_coleta(numero: str, nome: str, saudacao: str, restaurante_id:
         "hora_retirada": None,
         "pref_tipo_entrega": prefs["tipo_entrega"] if prefs else None,
         "pref_endereco": prefs["endereco"] if prefs else None,
-    })
+    }
+
+    # Se o lead mandou um pedido direto sem saudação, tenta extrair antes de mostrar cardápio
+    if texto_inicial:
+        c = await get_cardapio_hoje(restaurante_id)
+        pratos = [n for n, _ in c["pratos"]]
+        acompanhamentos = c["acompanhamentos"]
+        extraido = await extrair_pedido(texto_inicial, pratos=pratos, acompanhamentos=acompanhamentos)
+
+        if not _nada_extraido(extraido):
+            await sess.set_session(numero, sessao_inicial)
+            await enviar_texto(numero, f"{saudacao}Bem-vindo ao *GUSTO* 🍽️")
+            sessao_atual = await sess.get_session(numero)
+            await _mesclar(sessao_atual, extraido, restaurante_id)
+            faltando = _campos_faltando(sessao_atual)
+            if faltando:
+                sessao_atual["etapa"] = "coletando"
+                await sess.set_session(numero, sessao_atual)
+                await enviar_texto(numero, await _montar_pergunta_faltando(sessao_atual, faltando, restaurante_id))
+            else:
+                sessao_atual["etapa"] = "aguardando_confirmacao"
+                await sess.set_session(numero, sessao_atual)
+                await _enviar_resumo(numero, sessao_atual)
+            return
+
+    cardapio = await formatar_cardapio(restaurante_id)
+    await enviar_texto(numero, f"{saudacao}Bem-vindo ao *GUSTO* 🍽️\n\n{cardapio}")
+    await enviar_texto(numero, "Qual prato você vai querer hoje?")
+    await sess.set_session(numero, sessao_inicial)
 
 
 async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int = 1):
