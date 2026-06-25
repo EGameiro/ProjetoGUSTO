@@ -131,25 +131,41 @@ async def _iniciar_coleta(numero: str, nome: str, saudacao: str, restaurante_id:
 
 
 async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int = 1):
-    # Confirmação de preferência de entrega
-    if not sessao.get("tipo_entrega") and sessao.get("pref_tipo_entrega"):
-        _CONFIRMAR = {"sim", "s", "yes", "pode", "ok", "mesmo", "mesmo endereço", "mesmo endereco", "confirmo"}
-        t = texto.lower().strip()
-        if t in _CONFIRMAR or "mesmo" in t:
-            pref_tipo = sessao["pref_tipo_entrega"]
-            sessao["tipo_entrega"] = pref_tipo
-            if pref_tipo == "entrega":
-                sessao["endereco"] = sessao.get("pref_endereco")
-            faltando = _campos_faltando(sessao)
-            if faltando:
-                sessao["etapa"] = "coletando"
-                await sess.set_session(numero, sessao)
-                await enviar_texto(numero, await _montar_pergunta_faltando(sessao, faltando, restaurante_id))
-            else:
-                sessao["etapa"] = "aguardando_confirmacao"
-                await sess.set_session(numero, sessao)
-                await _enviar_resumo(numero, sessao)
-            return
+    # Confirmação de preferência de entrega/endereço
+    _CONFIRMAR = {"sim", "s", "yes", "pode", "ok", "mesmo", "mesmo endereço", "mesmo endereco", "confirmo"}
+    t = texto.lower().strip()
+    confirmou = t in _CONFIRMAR or "mesmo" in t
+
+    # Caso 1: tipo ainda não definido — confirma tipo e endereço da preferência
+    if not sessao.get("tipo_entrega") and sessao.get("pref_tipo_entrega") and confirmou:
+        pref_tipo = sessao["pref_tipo_entrega"]
+        sessao["tipo_entrega"] = pref_tipo
+        if pref_tipo == "entrega":
+            sessao["endereco"] = sessao.get("pref_endereco")
+        faltando = _campos_faltando(sessao)
+        if faltando:
+            sessao["etapa"] = "coletando"
+            await sess.set_session(numero, sessao)
+            await enviar_texto(numero, await _montar_pergunta_faltando(sessao, faltando, restaurante_id))
+        else:
+            sessao["etapa"] = "aguardando_confirmacao"
+            await sess.set_session(numero, sessao)
+            await _enviar_resumo(numero, sessao)
+        return
+
+    # Caso 2: tipo já definido como entrega mas endereço faltando — confirma endereço da preferência
+    if sessao.get("tipo_entrega") == "entrega" and not sessao.get("endereco") and sessao.get("pref_endereco") and confirmou:
+        sessao["endereco"] = sessao["pref_endereco"]
+        faltando = _campos_faltando(sessao)
+        if faltando:
+            sessao["etapa"] = "coletando"
+            await sess.set_session(numero, sessao)
+            await enviar_texto(numero, await _montar_pergunta_faltando(sessao, faltando, restaurante_id))
+        else:
+            sessao["etapa"] = "aguardando_confirmacao"
+            await sess.set_session(numero, sessao)
+            await _enviar_resumo(numero, sessao)
+        return
 
     # Recusa de acompanhamento sem citar o prato (ex: "não precisa", "sem acomp")
     _SEM_ACOMP = {"não", "nao", "não precisa", "nao precisa", "sem", "sem acompanhamento",
@@ -401,7 +417,11 @@ async def _montar_pergunta_faltando(sessao: dict, faltando: list, restaurante_id
             else:
                 partes.append("• *Entrega ou retirada?*\n  Se entrega, informe o endereço.\n  Se retirada, informe o horário.")
         elif campo == "endereco":
-            partes.append("• *Endereço* de entrega?")
+            pref_end = sessao.get("pref_endereco")
+            if pref_end:
+                partes.append(f"• Na última vez entregamos em *{pref_end}*. Mesmo endereço ou vai mudar?")
+            else:
+                partes.append("• *Endereço* de entrega?")
         elif campo == "horario":
             partes.append("• *Que horas* você busca?")
     return "\n".join(partes)
