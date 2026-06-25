@@ -167,6 +167,28 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
             await _enviar_resumo(numero, sessao)
         return
 
+    # Tamanho simples sem citar o prato (ex: "normal", "mini", "executiva")
+    _TAMANHOS = {"mini": "Mini", "normal": "Normal", "executiva": "Executiva"}
+    tamanho_simples = _TAMANHOS.get(texto.lower().strip())
+    if tamanho_simples:
+        itens_sem_tamanho = [i for i in sessao.get("itens", []) if not i.get("tamanho")]
+        if itens_sem_tamanho:
+            # Pega o grupo da mistura do primeiro item sem tamanho e aplica a todos do grupo
+            mistura_alvo = (itens_sem_tamanho[0].get("mistura") or "").lower()
+            for item in sessao["itens"]:
+                if (item.get("mistura") or "").lower() == mistura_alvo and not item.get("tamanho"):
+                    item["tamanho"] = tamanho_simples
+            faltando = _campos_faltando(sessao)
+            if faltando:
+                sessao["etapa"] = "coletando"
+                await sess.set_session(numero, sessao)
+                await enviar_texto(numero, await _montar_pergunta_faltando(sessao, faltando, restaurante_id))
+            else:
+                sessao["etapa"] = "aguardando_confirmacao"
+                await sess.set_session(numero, sessao)
+                await _enviar_resumo(numero, sessao)
+            return
+
     # Recusa de acompanhamento sem citar o prato (ex: "não precisa", "sem acomp")
     _SEM_ACOMP = {"não", "nao", "não precisa", "nao precisa", "sem", "sem acompanhamento",
                   "não quero", "nao quero", "dispensa", "não obrigado", "nao obrigado", "só o prato"}
