@@ -127,6 +127,27 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
                 await _enviar_resumo(numero, sessao)
             return
 
+    # Recusa de acompanhamento sem citar o prato (ex: "não precisa", "sem acomp")
+    _SEM_ACOMP = {"não", "nao", "não precisa", "nao precisa", "sem", "sem acompanhamento",
+                  "não quero", "nao quero", "dispensa", "não obrigado", "nao obrigado", "só o prato"}
+    itens_sem_acomp = [
+        i for i in sessao.get("itens", [])
+        if not i.get("acomp_1") and not i.get("sem_acompanhamento")
+    ]
+    if itens_sem_acomp and texto.lower().strip() in _SEM_ACOMP:
+        for item in itens_sem_acomp:
+            item["sem_acompanhamento"] = True
+        faltando = _campos_faltando(sessao)
+        if faltando:
+            sessao["etapa"] = "coletando"
+            await sess.set_session(numero, sessao)
+            await enviar_texto(numero, await _montar_pergunta_faltando(sessao, faltando, restaurante_id))
+        else:
+            sessao["etapa"] = "aguardando_confirmacao"
+            await sess.set_session(numero, sessao)
+            await _enviar_resumo(numero, sessao)
+        return
+
     c = await get_cardapio_hoje(restaurante_id)
     pratos          = [nome for nome, _ in c["pratos"]]
     acompanhamentos = c["acompanhamentos"]
