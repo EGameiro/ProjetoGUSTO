@@ -1,6 +1,5 @@
 Imports System.Drawing
 Imports System.Drawing.Printing
-Imports System.Drawing.Text
 Imports Microsoft.Extensions.Logging
 
 Public Class Impressora
@@ -24,22 +23,32 @@ Public Class Impressora
                 End If
             End If
 
+            ' Margens mínimas para maximizar área útil na térmica
+            doc.DefaultPageSettings.Margins = New Margins(5, 5, 5, 5)
+
             Dim linhas = cupom.Split({vbCrLf, vbLf}, StringSplitOptions.None)
             Dim indice As Integer = 0
 
             AddHandler doc.PrintPage, Sub(sender, e)
-                Dim fonte As New Font("Courier New", 9, FontStyle.Regular, GraphicsUnit.Point)
-                Dim y As Single = e.MarginBounds.Top
+                ' Fonte menor e sem anti-alias para impressora térmica
+                Dim fonte As New Font("Courier New", 8, FontStyle.Regular, GraphicsUnit.Point)
+                e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.SingleBitPerPixel
+
+                ' Começa direto na borda esquerda com margem mínima
+                Dim x As Single = e.PageBounds.Left + 5
+                Dim y As Single = e.PageBounds.Top + 5
                 Dim alturaLinha = fonte.GetHeight(e.Graphics)
+                Dim limiteInferior = e.PageBounds.Bottom - 5
 
                 While indice < linhas.Length
                     Dim linha = linhas(indice)
-                    e.Graphics.DrawString(linha, fonte, Brushes.Black, e.MarginBounds.Left, y)
+                    e.Graphics.DrawString(linha, fonte, Brushes.Black, x, y)
                     y += alturaLinha
                     indice += 1
 
-                    If y + alturaLinha > e.MarginBounds.Bottom Then
+                    If y + alturaLinha > limiteInferior Then
                         e.HasMorePages = True
+                        fonte.Dispose()
                         Exit Sub
                     End If
                 End While

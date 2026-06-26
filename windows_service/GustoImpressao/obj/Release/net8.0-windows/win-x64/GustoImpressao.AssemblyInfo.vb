@@ -15,7 +15,7 @@ Imports System.Reflection
 <Assembly: System.Reflection.AssemblyCompanyAttribute("GustoImpressao"),  _
  Assembly: System.Reflection.AssemblyConfigurationAttribute("Release"),  _
  Assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0"),  _
- Assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f7b814d21b38738b7087446de3adab03e93a29c8"),  _
+ Assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+0f0aa28ffd3e38093f767bd49e4266d4a4d42319"),  _
  Assembly: System.Reflection.AssemblyProductAttribute("GustoImpressao"),  _
  Assembly: System.Reflection.AssemblyTitleAttribute("GustoImpressao"),  _
  Assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0"),  _
