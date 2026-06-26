@@ -1,7 +1,7 @@
 import logging
 from services import session as sess
 from services.uazapi import enviar_texto
-from services.cardapio import formatar_cardapio, get_acompanhamentos_hoje, get_precos_hoje, get_cardapio_hoje
+from services.cardapio import formatar_cardapio, get_acompanhamentos_hoje, get_preco_prato, get_cardapio_hoje
 from services.extrator import extrair_pedido, responder_pergunta, _nada_extraido
 from db.pedidos import salvar_pedido_individual, buscar_nome_cliente, buscar_pedido_aberto, buscar_preferencias_cliente
 
@@ -311,12 +311,10 @@ async def _mesclar(sessao: dict, extraido: dict, restaurante_id: int = 1):
         mistura_ext = item_ext["mistura"].lower()
         quantidade = max(1, int(item_ext.get("quantidade") or 1))
 
-        # Resolve nome oficial e preço do cardápio
-        preco = None
+        # Resolve nome oficial do cardápio
         nome_oficial = item_ext["mistura"]
-        for nome_prato, p in c["pratos"]:
+        for nome_prato, _ in c["pratos"]:
             if nome_prato.lower() in mistura_ext or mistura_ext in nome_prato.lower():
-                preco = p
                 nome_oficial = nome_prato
                 break
 
@@ -334,7 +332,7 @@ async def _mesclar(sessao: dict, extraido: dict, restaurante_id: int = 1):
         else:
             # Novo(s) item(ns) — cria quantidade cópias
             for _ in range(quantidade):
-                novo = {**item_ext, "mistura": nome_oficial, "valor_unitario": preco}
+                novo = {**item_ext, "mistura": nome_oficial, "valor_unitario": None}
                 novo.pop("quantidade", None)
                 itens_sessao.append(novo)
 
@@ -465,11 +463,14 @@ async def _enviar_resumo(numero: str, sessao: dict):
         else:
             vistos[chave] = {**item, "_qtd": 1}
 
+    restaurante_id = sessao.get("restaurante_id", 1)
     for i, item in enumerate(vistos.values(), 1):
         qtd = item["_qtd"]
         acomps = [a for a in [item.get("acomp_1"), item.get("acomp_2")] if a]
         acomps_texto = " + ".join(acomps) if acomps else "Nenhum"
-        valor_unit = item.get("valor_unitario") or 0
+        tamanho = item.get("tamanho") or ""
+        valor_unit = await get_preco_prato(item.get("mistura") or "", tamanho, restaurante_id)
+        item["valor_unitario"] = valor_unit
         valor_linha = valor_unit * qtd
         total += valor_linha
         obs = f"\n   Obs: {item['observacoes']}" if item.get("observacoes") else ""

@@ -23,7 +23,7 @@ async def _buscar_mysql(restaurante_id: int) -> dict:
 
     rows = await fetchall(
         """
-        SELECT tipo, nome, preco
+        SELECT tipo, nome, preco_mini, preco_normal, preco_executiva
         FROM cardapio_web
         WHERE restaurante_id = %s
           AND dia_semana = %s
@@ -34,8 +34,15 @@ async def _buscar_mysql(restaurante_id: int) -> dict:
         (restaurante_id, dia),
     )
 
-    # Lista de tuplas (nome, preco) para cada prato
-    pratos = [(r["nome"], float(r["preco"]) if r["preco"] else None) for r in rows if r["tipo"] == "prato"]
+    # Lista de tuplas (nome, {Mini: x, Normal: x, Executiva: x}) para cada prato
+    pratos = [
+        (r["nome"], {
+            "Mini":      float(r["preco_mini"])      if r["preco_mini"]      else None,
+            "Normal":    float(r["preco_normal"])    if r["preco_normal"]    else None,
+            "Executiva": float(r["preco_executiva"]) if r["preco_executiva"] else None,
+        })
+        for r in rows if r["tipo"] == "prato"
+    ]
     acompanhamentos = [r["nome"] for r in rows if r["tipo"] == "acompanhamento"]
     tamanhos = ["Mini", "Normal", "Executiva"]
 
@@ -87,9 +94,14 @@ async def formatar_cardapio(restaurante_id: int = 1) -> str:
 
     if c["pratos"]:
         linhas.append("*Pratos do dia:*")
-        for nome, preco in c["pratos"]:
-            if preco:
-                linhas.append(f"• {nome} — {brl(preco)}")
+        for nome, precos in c["pratos"]:
+            partes = []
+            for tam in ["Mini", "Normal", "Executiva"]:
+                p = precos.get(tam)
+                if p:
+                    partes.append(f"{tam} {brl(p)}")
+            if partes:
+                linhas.append(f"• {nome} — {' | '.join(partes)}")
             else:
                 linhas.append(f"• {nome}")
     else:
@@ -114,10 +126,11 @@ async def get_acompanhamentos_hoje(restaurante_id: int = 1) -> list:
     return [a.lower() for a in c["acompanhamentos"]]
 
 
-async def get_precos_hoje(restaurante_id: int = 1) -> dict:
+async def get_preco_prato(nome_prato: str, tamanho: str, restaurante_id: int = 1) -> float:
+    """Retorna o preço de um prato específico para um tamanho específico."""
     c = await get_cardapio_hoje(restaurante_id)
-    # Retorna o preço do primeiro prato como referência (todos têm o mesmo preço)
-    for nome, preco in c["pratos"]:
-        if preco:
-            return {t: preco for t in c["tamanhos"]}
-    return {t: 0 for t in c["tamanhos"]}
+    nome_lower = nome_prato.lower()
+    for nome, precos in c["pratos"]:
+        if nome.lower() == nome_lower:
+            return precos.get(tamanho) or 0.0
+    return 0.0
