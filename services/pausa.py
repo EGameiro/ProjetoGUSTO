@@ -1,5 +1,6 @@
 import re
 import logging
+import config
 from services.redis_client import get_redis
 from db.connection import fetchone
 
@@ -56,3 +57,26 @@ async def retomar(restaurante_id: int):
     key = _PAUSA_KEY.format(restaurante_id=restaurante_id)
     await r.delete(key)
     log.info(f"[restaurante={restaurante_id}] Agente retomado manualmente")
+
+
+# ── Pausa por conversa (intervenção manual via WhatsApp Web) ──────────────────
+
+_PAUSA_NUMERO_KEY = "pausa_numero:{restaurante_id}:{numero}"
+
+
+async def pausar_numero(restaurante_id: int, numero: str):
+    """Pausa o bot para um número específico por PAUSA_ATENDIMENTO_MINUTOS."""
+    r = get_redis()
+    key = _PAUSA_NUMERO_KEY.format(restaurante_id=restaurante_id, numero=numero)
+    segundos = config.PAUSA_ATENDIMENTO_MINUTOS * 60
+    await r.setex(key, segundos, "1")
+    log.info(
+        f"[restaurante={restaurante_id}] Atendimento pausado para {numero} "
+        f"por {config.PAUSA_ATENDIMENTO_MINUTOS}min (intervenção manual)"
+    )
+
+
+async def numero_esta_pausado(restaurante_id: int, numero: str) -> bool:
+    r = get_redis()
+    key = _PAUSA_NUMERO_KEY.format(restaurante_id=restaurante_id, numero=numero)
+    return await r.exists(key) == 1

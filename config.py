@@ -25,5 +25,8 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 # API de impressão
 API_KEY_IMPRESSORA = os.getenv("API_KEY_IMPRESSORA", "")
 
+# Intervenção manual: tempo de pausa por conversa quando dono envia mensagem
+PAUSA_ATENDIMENTO_MINUTOS = int(os.getenv("PAUSA_ATENDIMENTO_MINUTOS", 30))
+
 # App
 PORT = int(os.getenv("PORT", 8000))

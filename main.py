@@ -14,7 +14,7 @@ from services.redis_client import get_redis, close_redis
 from services.uazapi import normalizar_payload
 from handlers.classifier import eh_convenio
 from handlers import individual
-from services.pausa import eh_admin, pausar, retomar, esta_pausado, _parse_duracao
+from services.pausa import eh_admin, pausar, retomar, esta_pausado, _parse_duracao, pausar_numero, numero_esta_pausado
 
 logging.basicConfig(
     level=logging.INFO,
@@ -75,6 +75,15 @@ async def _processar_webhook(payload: dict, restaurante_id: int):
     if event_type == "messages" and msg_type not in ("text", "image", "audio"):
         log.info(f"[restaurante={restaurante_id}] Tipo desconhecido — EventType={event_type} | msg.type={msg_type}")
 
+    # ── Intervenção manual: dono enviou mensagem para um cliente ─────────────
+    raw_msg = payload.get("message", {})
+    if raw_msg.get("fromMe"):
+        chat_id = raw_msg.get("chatid", "")
+        numero_cliente = chat_id.replace("@s.whatsapp.net", "").replace("@g.us", "")
+        if numero_cliente and not raw_msg.get("isGroup"):
+            await pausar_numero(restaurante_id, numero_cliente)
+        return
+
     msg = normalizar_payload(payload)
     if msg is None:
         return
@@ -108,9 +117,14 @@ async def _processar_webhook(payload: dict, restaurante_id: int):
             await enviar_texto(numero, "✅ Agente reativado com sucesso!")
             return
 
-    # ── Verifica pausa ────────────────────────────────────────
+    # ── Verifica pausa global ─────────────────────────────────
     if await esta_pausado(restaurante_id):
         log.info(f"[restaurante={restaurante_id}] Agente pausado — ignorando mensagem de {numero}")
+        return
+
+    # ── Verifica pausa por conversa (intervenção manual) ─────
+    if await numero_esta_pausado(restaurante_id, numero):
+        log.info(f"[restaurante={restaurante_id}] Conversa pausada — ignorando mensagem de {numero}")
         return
 
     await individual.processar(msg, restaurante_id=restaurante_id)
