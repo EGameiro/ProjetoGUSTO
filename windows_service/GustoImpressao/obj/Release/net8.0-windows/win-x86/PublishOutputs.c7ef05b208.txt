@@ -1,0 +1,4 @@
+F:\claudeIA\Projeto GUSTO\gusto-agent\windows_service\GustoImpressao\publish-x86\appsettings.json
+F:\claudeIA\Projeto GUSTO\gusto-agent\windows_service\GustoImpressao\publish-x86\publish\appsettings.json
+F:\claudeIA\Projeto GUSTO\gusto-agent\windows_service\GustoImpressao\publish-x86\GustoImpressao.pdb
+F:\claudeIA\Projeto GUSTO\gusto-agent\windows_service\GustoImpressao\publish-x86\GustoImpressao.exe
