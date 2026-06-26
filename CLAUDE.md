@@ -13,7 +13,7 @@ Recebe pedidos de marmitas executivas de clientes individuais, processa com IA e
 | HTTP client | httpx (async) |
 | Banco | MySQL 8 (aiomysql) |
 | Cache de sessão | Redis (redis-py async) |
-| Cardápio | Google Sheets (gspread) |
+| Cardápio | MySQL (`cardapio_web`) via portal web GustoConvenio.Web |
 | LLM | Claude Haiku 4.5 (Anthropic API) |
 | WhatsApp | UAZAPI |
 | Deploy | Railway |
@@ -30,30 +30,37 @@ gusto-agent/
 │
 ├── handlers/
 │   ├── classifier.py        → Verifica se número é convênio (bloqueado)
-│   ├── individual.py        → Fluxo completo de pedido individual
-│   └── convenio.py          → Removido (atendimento convênio descontinuado)
+│   └── individual.py        → Fluxo completo de pedido individual
 │
 ├── services/
 │   ├── uazapi.py            → Envio de mensagens e normalização de payload
 │   ├── session.py           → Sessão por número no Redis (TTL 4h)
-│   ├── cardapio.py          → Leitura do Google Sheets + cache 30min
+│   ├── cardapio.py          → Leitura do MySQL (cardapio_web) + cache 15min
 │   ├── extrator.py          → Extração de dados do pedido via Claude Haiku
 │   ├── cupom.py             → Montagem do cupom de impressão (individual e convênio)
 │   └── redis_client.py      → Singleton do cliente Redis
 │
 ├── db/
 │   ├── connection.py        → Pool aiomysql + helpers fetchone/fetchall/execute
-│   ├── pedidos.py           → INSERT pedidos/itens_pedido, upsert clientes, busca nome e pedido aberto
+│   ├── pedidos.py           → INSERT pedidos/itens_pedido, upsert clientes, busca nome/pedido aberto/preferências
 │   └── dashboard.py         → Queries do dashboard operacional
 │
 ├── dashboard/
 │   └── index.html           → Dashboard operacional (fila de pedidos do dia)
 │
 └── windows_service/
-    ├── poller.exe            → Compilado PyInstaller — serviço de impressão para o cliente
-    ├── impressao_client.py   → Cliente HTTP para os endpoints de impressão da API
-    ├── nssm.exe              → Gerenciador de serviço Windows
-    └── .env                  → API_URL, API_KEY, NOME_IMPRESSORA, INTERVALO_IMPRESSAO
+    └── GustoImpressao/      → Serviço de impressão em VB.NET (.NET 8)
+        ├── dist-cliente/    → Pasta pronta para deploy no cliente
+        │   ├── GustoImpressao.exe
+        │   ├── appsettings.json
+        │   ├── instalar_servico.bat
+        │   └── desinstalar_servico.bat
+        ├── Program.vb
+        ├── PollerWorker.vb
+        ├── ApiClient.vb
+        ├── Cupom.vb
+        ├── Impressora.vb
+        └── GustoConfig.vb
 ```
 
 ---
@@ -65,9 +72,10 @@ POST /webhook
   └── normalizar_payload()        → extrai numero, texto, push_name, tipo_midia
         └── eh_convenio(numero)?  → se sim: ignora silenciosamente (return 200)
               └── individual.processar(msg)
-                    ├── saudação detectada      → _inicio()
-                    ├── etapa=inicio            → _inicio()
-                    ├── etapa=coletando         → _coletando()
+                    ├── saudação detectada           → _inicio()
+                    ├── etapa=inicio (com texto)     → _inicio() → tenta extrair pedido direto
+                    ├── etapa=inicio (sem texto útil)→ _inicio() → exibe cardápio
+                    ├── etapa=coletando              → _coletando()
                     ├── etapa=aguardando_confirmacao → _receber_confirmacao()
                     └── etapa=aguardando_intencao   → _receber_intencao()
 ```
@@ -76,7 +84,7 @@ POST /webhook
 
 | Etapa | Descrição |
 |---|---|
-| `inicio` | Primeira mensagem — verifica pedido aberto, depois envia cardápio |
+| `inicio` | Primeira mensagem — verifica pedido aberto, tenta extrair pedido direto, ou exibe cardápio |
 | `aguardando_intencao` | Lead tem pedido aberto — aguarda "novo pedido" ou "só queria saber" |
 | `coletando` | Coleta incremental dos campos do pedido (suporta múltiplos itens) |
 | `aguardando_confirmacao` | Exibe resumo e aguarda "sim" ou "não" |
@@ -84,10 +92,17 @@ POST /webhook
 ### Detecção de pedido aberto
 
 Ao iniciar a conversa (`_inicio`), o bot consulta `buscar_pedido_aberto()`:
-- Se existe pedido `individual` do dia com `status != 'entregue'`, envia mensagem com status e lista de itens do pedido
+- Se existe pedido `individual` do dia com `status != 'entregue'`, envia mensagem com status e lista de itens
 - Status exibidos: `preparo → "em preparo 🍳"` | `saiu → "saiu para entrega 🛵"`
 - Se o lead responde que quer novo pedido → inicia coleta normalmente
 - Se responde que só queria saber → encerra sessão com mensagem de confirmação
+
+### Pedido direto sem saudação
+
+Se o lead manda a primeira mensagem já com o pedido (ex: "quero uma carne assada mini"), o bot:
+1. Tenta extrair dados com o LLM antes de exibir o cardápio
+2. Se extraiu algo útil → exibe só "Bem-vindo ao GUSTO 🍽️" e já pergunta o que falta
+3. Se não extraiu nada → exibe o cardápio normalmente
 
 ### Saudações reconhecidas
 
@@ -104,20 +119,24 @@ Qualquer saudação **sempre reinicia o fluxo** (deleta sessão e chama `_inicio
   "nome": "Eduardo",
   "itens": [
     {
-      "mistura": "Feijoada Completa",
+      "mistura": "Carne Assada",
       "tamanho": "Normal",
       "acomp_1": "Farofa",
       "acomp_2": null,
       "sem_acompanhamento": null,
       "observacoes": null,
-      "valor_unitario": 34.25
+      "valor_unitario": null
     }
   ],
-  "tipo_entrega": "retirada",
-  "endereco": null,
-  "hora_retirada": "13h"
+  "tipo_entrega": "entrega",
+  "endereco": "Rua das Flores, 123",
+  "hora_retirada": null,
+  "pref_tipo_entrega": "entrega",
+  "pref_endereco": "Rua das Flores, 123"
 }
 ```
+
+> `valor_unitario` é calculado em `_enviar_resumo` via `get_preco_prato(mistura, tamanho)` — não é armazenado na sessão.
 
 ---
 
@@ -131,12 +150,29 @@ O bot suporta pedidos com N pratos na mesma sessão.
 
 **Coleta por item:**
 - O bot pergunta tamanho e acompanhamentos de um grupo de mistura por vez
-- Itens com a mesma mistura são agrupados: "Sobre *3x Feijoada Completa*: Tamanho | Acomp"
-- Tamanho/acomp respondidos sem citar o prato são aplicados ao primeiro item incompleto
+- Itens com a mesma mistura são agrupados: "Sobre *3x Carne Assada*: Tamanho | Acomp"
+- Tamanho simples ("mini", "normal", "executiva") detectado antes de chamar o LLM — aplicado ao primeiro grupo incompleto
+- "não precisa" / "sem acompanhamento" detectado antes do LLM — marca `sem_acompanhamento=True`
 
 **Banco:** 1 linha em `pedidos` + N linhas em `itens_pedido` (uma por marmita).
 
-**Resumo para o cliente:** itens iguais são agrupados ("3x Feijoada — Normal | R$ 102,75").
+**Resumo para o cliente:** itens iguais agrupados ("3x Carne Assada — Normal | Farofa | R$ 87,60").
+
+---
+
+## Preferências do Cliente
+
+Ao finalizar um pedido, `upsert_cliente()` salva em `clientes`:
+- `tipo_entrega_pref` — última preferência (entrega/retirada)
+- `endereco_padrao` — último endereço de entrega
+
+Na próxima conversa (`_iniciar_coleta`), as preferências são carregadas na sessão (`pref_tipo_entrega`, `pref_endereco`) e usadas para personalizar a pergunta:
+- "Na última vez entregamos em *Rua X*. Mesmo endereço ou vai mudar?"
+- "Na última vez você *retirou*. Vai retirar novamente ou prefere entrega?"
+
+A confirmação ("sim", "mesmo") é detectada **antes** de chamar o LLM nos dois casos:
+1. `tipo_entrega` ainda não definido → confirma tipo + endereço da preferência
+2. `tipo_entrega` já definido como entrega mas `endereco` faltando → confirma endereço
 
 ---
 
@@ -168,22 +204,32 @@ Se nenhum campo útil for extraído (`_nada_extraido()`), a mensagem é tratada 
 
 ---
 
+## Cardápio (MySQL)
+
+- Tabela `cardapio_web` no banco MySQL
+- Gerenciado pelo portal web **GustoConvenio.Web** em Admin → Cardápio
+- Cache em memória de 15 minutos por `restaurante_id`
+- Colunas relevantes: `tipo` ("prato" | "acompanhamento"), `nome`, `preco_mini`, `preco_normal`, `preco_executiva`, `dia_semana` (0=Seg…5=Sab), `empresa_id` (NULL = cardápio WhatsApp)
+
+**Função principal:** `get_cardapio_hoje(restaurante_id)` retorna:
+```python
+{
+  "dia": "Quinta-feira",
+  "pratos": [("Carne Assada", {"Mini": 21.90, "Normal": 23.90, "Executiva": 24.90}), ...],
+  "acompanhamentos": ["Farofa", "Maionese"],
+  "tamanhos": ["Mini", "Normal", "Executiva"]
+}
+```
+
+**Preço por tamanho:** `get_preco_prato(nome, tamanho, restaurante_id)` — usado no resumo do pedido.
+
+---
+
 ## Empresas Conveniadas
 
 Números cadastrados em `empresas_convenio` com `ativo = 1` são **ignorados silenciosamente** pelo bot — nenhuma mensagem é enviada de volta.
 
 O atendimento automatizado para convênios foi descontinuado. A tabela permanece no banco apenas como lista de bloqueio.
-
----
-
-## Cardápio (Google Sheets)
-
-- Aba `Cardapio` na planilha configurada em `GOOGLE_SHEET_ID`
-- Colunas B–G = Segunda a Sábado
-- Campos lidos por linha (coluna A = nome do campo):
-  - `ESPECIAL`, `PRATO_1..9`, `ACOMP_1..9`
-  - `PRECO_MINI`, `PRECO_NORMAL`, `PRECO_EXECUTIVA`, `PRECO_CHURRASCO`
-- Cache em memória de 30 minutos
 
 ---
 
@@ -195,7 +241,8 @@ O atendimento automatizado para convênios foi descontinuado. A tabela permanece
 |---|---|
 | `pedidos` | Pedido raiz (tipo, número, data, endereço, status, impresso) |
 | `itens_pedido` | Itens do pedido (mistura, tamanho, acompanhamentos, valor) |
-| `clientes` | Histórico de clientes (numero_whatsapp, nome, endereço padrão) |
+| `clientes` | Histórico de clientes (numero_whatsapp, nome, tipo_entrega_pref, endereco_padrao) |
+| `cardapio_web` | Cardápio por dia/empresa com preços Mini/Normal/Executiva por prato |
 | `empresas_convenio` | Lista de números bloqueados (não atendidos pelo bot) |
 
 ### Status de pedido
@@ -208,7 +255,33 @@ Atualizado via `POST /pedidos/{id}/status` pelo dashboard operacional ou pelo ap
 
 ## Serviço de Impressão (Windows)
 
-`windows_service/poller.exe` — roda localmente na máquina do restaurante como serviço Windows (via NSSM), consulta a API a cada `INTERVALO_IMPRESSAO` segundos e imprime pedidos com `impresso = 0`.
+Reescrito em **VB.NET (.NET 8)** — Windows Service nativo, sem dependências externas além do .NET 8 Runtime.
+
+### Arquitetura
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `Program.vb` | Entry point — configura o host Windows Service |
+| `PollerWorker.vb` | `BackgroundService` — loop a cada N segundos |
+| `ApiClient.vb` | HTTP para a API: buscar pendentes + marcar impresso |
+| `Cupom.vb` | Monta o texto do cupom (individual e convênio) |
+| `Impressora.vb` | Imprime via `PrintDocument` — margem mínima 5px, fonte Courier New 8pt |
+| `GustoConfig.vb` | Configuração lida do `appsettings.json` |
+
+### Configuração (`appsettings.json`)
+
+```json
+{
+  "Gusto": {
+    "ApiUrl": "https://projetogusto-production.up.railway.app",
+    "ApiKey": "...",
+    "NomeImpressora": "",
+    "IntervaloSegundos": 15
+  }
+}
+```
+
+> `NomeImpressora` vazio = impressora padrão do Windows.
 
 ### Segurança
 - Nenhuma credencial de banco na máquina do cliente
@@ -217,13 +290,22 @@ Atualizado via `POST /pedidos/{id}/status` pelo dashboard operacional ou pelo ap
 
 ### Instalação no cliente
 ```
-1. Copiar poller.exe, nssm.exe e .env para C:\Gusto\
-2. Editar .env: preencher NOME_IMPRESSORA com o nome exato da impressora
-3. (como Administrador):
-   nssm install GustoImpressao "C:\Gusto\poller.exe"
-   nssm set GustoImpressao AppDirectory "C:\Gusto"
-   nssm start GustoImpressao
+Pré-requisito: instalar .NET 8 Runtime (x64) na máquina do cliente
+
+1. Copiar a pasta dist-cliente\ para C:\AgenteFood\ (ou qualquer pasta sem espaços)
+2. Editar appsettings.json: preencher NomeImpressora se não for a impressora padrão
+3. Botão direito em instalar_servico.bat → Executar como administrador
 4. Verificar em services.msc: status "Em execução"
+```
+
+### Desinstalação
+```
+Botão direito em desinstalar_servico.bat → Executar como administrador
+```
+Ou manualmente:
+```cmd
+sc stop GustoImpressao
+sc delete GustoImpressao
 ```
 
 ---
@@ -264,11 +346,6 @@ WEBHOOK_URL=        # URL pública deste servidor
 # LLM
 ANTHROPIC_API_KEY=
 
-# Google Sheets
-GOOGLE_SHEET_ID=
-GOOGLE_CREDENTIALS_FILE=credentials/google_service_account.json
-GOOGLE_CREDENTIALS_JSON=   # JSON inline (Railway — substitui o arquivo)
-
 # Impressão (validação de API Key do poller)
 API_KEY_IMPRESSORA=
 
@@ -281,12 +358,14 @@ PORT=8000
 ## Deploy (Railway)
 
 - Entrada: `uvicorn main:app --host 0.0.0.0 --port $PORT` (via `Procfile`)
-- Credenciais Google: variável `GOOGLE_CREDENTIALS_JSON` com o JSON inline
 - Webhook configurado manualmente no painel do UAZAPI apontando para `$WEBHOOK_URL/webhook`
 - Deploy automático a cada push na branch `master`
 
 ---
 
-## Pendências
+## Migrations SQL
 
-- [ ] **Migrar cardápio do Google Sheets para MySQL.** O portal web (GustoConvenio.Web) passa a ser a fonte oficial do cardápio. O `services/cardapio.py` precisa ser reescrito para ler de `cardapio_web` via MySQL. Quando feito, remover `gspread`, `google-auth` e credenciais Google.
+| Arquivo | Descrição |
+|---|---|
+| `migration_cardapio_empresa_preco.sql` | Adiciona `empresa_id` e `preco` em `cardapio_web` |
+| `migration_preco_tamanho.sql` | Adiciona `preco_mini`, `preco_normal`, `preco_executiva` em `cardapio_web` |
