@@ -265,7 +265,7 @@ Reescrito em **VB.NET (.NET 8)** — Windows Service nativo, sem dependências e
 | `PollerWorker.vb` | `BackgroundService` — loop a cada N segundos |
 | `ApiClient.vb` | HTTP para a API: buscar pendentes + marcar impresso |
 | `Cupom.vb` | Monta o texto do cupom (individual e convênio) |
-| `Impressora.vb` | Imprime via `PrintDocument` — margem mínima 5px, fonte Courier New 8pt |
+| `Impressora.vb` | Imprime via `PrintDocument` — margem mínima 5px, fonte Courier New 10pt, quebra de linha automática |
 | `GustoConfig.vb` | Configuração lida do `appsettings.json` |
 
 ### Configuração (`appsettings.json`)
@@ -288,6 +288,13 @@ Reescrito em **VB.NET (.NET 8)** — Windows Service nativo, sem dependências e
 - Autenticação via `API_KEY` no header `X-Api-Key`
 - Endpoints: `GET /api/impressao/pendentes` e `POST /api/impressao/{id}/marcar`
 
+### Cupom de Convênio
+A API retorna `nome_empresa` via JOIN com `empresas_convenio`. O cupom exibe:
+- Cabeçalho: nome da empresa centralizado com ★
+- Por funcionário: nome, prato + tamanho + valor, acompanhamentos
+- Rodapé: total de marmitas + valor total + forma de pagamento
+- Texto longo quebra automaticamente em vez de truncar
+
 ### Instalação no cliente
 ```
 Pré-requisito: instalar .NET 8 Runtime (x64) na máquina do cliente
@@ -295,7 +302,7 @@ Pré-requisito: instalar .NET 8 Runtime (x64) na máquina do cliente
 1. Copiar a pasta dist-cliente\ para C:\AgenteFood\ (ou qualquer pasta sem espaços)
 2. Editar appsettings.json: preencher NomeImpressora se não for a impressora padrão
 3. Botão direito em instalar_servico.bat → Executar como administrador
-4. Verificar em services.msc: status "Em execução"
+4. O serviço é instalado com início MANUAL — iniciar pelo services.msc quando necessário
 ```
 
 ### Desinstalação
@@ -349,9 +356,25 @@ ANTHROPIC_API_KEY=
 # Impressão (validação de API Key do poller)
 API_KEY_IMPRESSORA=
 
+# Intervenção manual — tempo de pausa por conversa quando dono envia mensagem via WhatsApp Web
+PAUSA_ATENDIMENTO_MINUTOS=30
+
 # App
 PORT=8000
 ```
+
+---
+
+## Intervenção Manual (WhatsApp Web)
+
+Quando o dono envia uma mensagem para um lead via WhatsApp Web (`fromMe=true`), o bot:
+1. Detecta o evento antes de processar qualquer resposta
+2. Pausa o atendimento automático daquele número por `PAUSA_ATENDIMENTO_MINUTOS` (padrão: 30min)
+3. Retoma automaticamente após o tempo — sem nenhuma ação manual
+
+A pausa é por número/conversa (Redis key `pausa_numero:{restaurante_id}:{numero}`), não afeta outros leads.
+
+Configurável sem alterar código: variável `PAUSA_ATENDIMENTO_MINUTOS` no painel do Railway.
 
 ---
 
