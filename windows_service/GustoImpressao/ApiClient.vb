@@ -39,6 +39,7 @@ Public Class ApiClient
                 p.EnderecoEntrega = GetStr(pedidoEl, "endereco_entrega")
                 p.HoraRetirada = GetStr(pedidoEl, "hora_retirada")
                 p.EmpresaId = GetInt(pedidoEl, "empresa_id")
+                p.NomeEmpresa = GetStr(pedidoEl, "nome_empresa")
                 p.FormaPgto = GetStr(pedidoEl, "forma_pgto")
             End If
 
@@ -90,6 +91,7 @@ Public Class PedidoImpressao
     Public Property EnderecoEntrega As String = ""
     Public Property HoraRetirada As String = ""
     Public Property EmpresaId As Integer
+    Public Property NomeEmpresa As String = ""
     Public Property FormaPgto As String = ""
     Public Property Itens As New List(Of ItemImpressao)
 End Class

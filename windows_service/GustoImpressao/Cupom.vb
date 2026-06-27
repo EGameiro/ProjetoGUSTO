@@ -58,6 +58,11 @@ Public Module CupomBuilder
             Dim linhaPrato = $"  {item.Mistura}  {item.Tamanho}"
             sb.AppendLine(If(String.IsNullOrEmpty(valorStr), linhaPrato, LinhaKV(linhaPrato, valorStr)))
 
+            Dim acomps = {item.Acomp1, item.Acomp2}.Where(Function(a) Not String.IsNullOrWhiteSpace(a)).ToArray()
+            If acomps.Length > 0 Then
+                sb.AppendLine("  " & String.Join(" + ", acomps.Select(Function(a) ToTitleCase(a))))
+            End If
+
             If Not String.IsNullOrWhiteSpace(item.Observacoes) Then
                 sb.AppendLine($"  ⚠ {item.Observacoes}")
             End If
@@ -67,7 +72,7 @@ Public Module CupomBuilder
         Next
 
         Dim totalStr = $"R${totalValor:N2}".Replace(".", ",")
-        sb.AppendLine(LinhaKV($"TOTAL: {pedido.Itens.Count} marmita(s)", totalStr))
+        sb.AppendLine($"TOTAL: {pedido.Itens.Count} marmita(s)  {totalStr}")
         sb.AppendLine($"Forma pgto: {If(String.IsNullOrWhiteSpace(pedido.FormaPgto), "Convênio mensal", pedido.FormaPgto)}")
         sb.AppendLine(SEP_DUPLO)
         Return sb.ToString()

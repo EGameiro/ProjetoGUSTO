@@ -12,7 +12,7 @@ sc stop GustoImpressao >nul 2>&1
 sc delete GustoImpressao >nul 2>&1
 timeout /t 2 /nobreak >nul
 
-sc create GustoImpressao binPath= "\"%EXE%\"" start= auto DisplayName= "GUSTO - Impressao Automatica"
+sc create GustoImpressao binPath= "\"%EXE%\"" start= demand DisplayName= "GUSTO - Impressao Automatica"
 if errorlevel 1 (
     echo ERRO ao criar servico.
     pause

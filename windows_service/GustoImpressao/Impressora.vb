@@ -31,7 +31,7 @@ Public Class Impressora
 
             AddHandler doc.PrintPage, Sub(sender, e)
                 ' Fonte menor e sem anti-alias para impressora térmica
-                Dim fonte As New Font("Courier New", 8, FontStyle.Regular, GraphicsUnit.Point)
+                Dim fonte As New Font("Courier New", 10, FontStyle.Regular, GraphicsUnit.Point)
                 e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.SingleBitPerPixel
 
                 ' Começa direto na borda esquerda com margem mínima

@@ -91,8 +91,10 @@ async def buscar_pendentes_async() -> list[dict]:
     pedidos = await fetchall("""
         SELECT p.id, p.tipo, p.empresa_id, p.numero_whatsapp,
                p.data_pedido, p.horario_pedido,
-               p.endereco_entrega, p.hora_retirada, p.forma_pgto
+               p.endereco_entrega, p.hora_retirada, p.forma_pgto,
+               e.nome_empresa
           FROM pedidos p
+          LEFT JOIN empresas_convenio e ON e.id = p.empresa_id
          WHERE p.impresso = 0
            AND p.status != 'cancelado'
          ORDER BY p.criado_em ASC

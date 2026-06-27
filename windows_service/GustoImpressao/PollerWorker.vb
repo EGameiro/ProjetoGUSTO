@@ -49,7 +49,8 @@ Public Class PollerWorker
 
                 Dim cupom As String
                 If pedido.Tipo = "convenio" Then
-                    cupom = CupomBuilder.MontarCupomConvenio(pedido, "EMPRESA")
+                    Dim nomeEmp = If(String.IsNullOrWhiteSpace(pedido.NomeEmpresa), "EMPRESA", pedido.NomeEmpresa)
+                    cupom = CupomBuilder.MontarCupomConvenio(pedido, nomeEmp)
                 Else
                     cupom = CupomBuilder.MontarCupomIndividual(pedido)
                 End If
