@@ -40,17 +40,39 @@ Public Class Impressora
                 Dim alturaLinha = fonte.GetHeight(e.Graphics)
                 Dim limiteInferior = e.PageBounds.Bottom - 5
 
+                Dim larguraUtil = e.PageBounds.Width - 10
+
                 While indice < linhas.Length
                     Dim linha = linhas(indice)
-                    e.Graphics.DrawString(linha, fonte, Brushes.Black, x, y)
-                    y += alturaLinha
-                    indice += 1
 
-                    If y + alturaLinha > limiteInferior Then
-                        e.HasMorePages = True
-                        fonte.Dispose()
-                        Exit Sub
+                    ' Quebra a linha em partes que cabem na largura útil
+                    Dim partes As New List(Of String)
+                    If String.IsNullOrEmpty(linha) Then
+                        partes.Add("")
+                    Else
+                        Dim restante = linha
+                        While restante.Length > 0
+                            Dim tamanho = restante.Length
+                            While tamanho > 0 AndAlso e.Graphics.MeasureString(restante.Substring(0, tamanho), fonte).Width > larguraUtil
+                                tamanho -= 1
+                            End While
+                            If tamanho = 0 Then tamanho = 1
+                            partes.Add(restante.Substring(0, tamanho))
+                            restante = restante.Substring(tamanho)
+                        End While
                     End If
+
+                    For Each parte In partes
+                        e.Graphics.DrawString(parte, fonte, Brushes.Black, x, y)
+                        y += alturaLinha
+                        If y + alturaLinha > limiteInferior Then
+                            e.HasMorePages = True
+                            fonte.Dispose()
+                            Exit Sub
+                        End If
+                    Next
+
+                    indice += 1
                 End While
 
                 fonte.Dispose()
