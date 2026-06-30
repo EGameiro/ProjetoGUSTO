@@ -81,6 +81,7 @@ async def _inicio(numero: str, push_name: str = "", restaurante_id: int = 1, tex
             "etapa": "aguardando_intencao",
             "restaurante_id": restaurante_id,
             "nome": nome,
+            "texto_inicial": texto_inicial,
         })
         return
 
@@ -278,7 +279,8 @@ async def _receber_intencao(numero: str, sessao: dict, texto: str, restaurante_i
     saudacao = f"*{nome.split()[0]}*" if nome else "você"
 
     if t in _SIM or any(p in t for p in ["outro", "novo pedido", "fazer", "quero"]):
-        await _iniciar_coleta(numero, nome, f"Ótimo, {saudacao}! ", restaurante_id)
+        texto_inicial = sessao.get("texto_inicial", "")
+        await _iniciar_coleta(numero, nome, f"Ótimo, {saudacao}! ", restaurante_id, texto_inicial)
     elif t in _NAO or any(p in t for p in ["só", "so", "obrigad", "valeu", "saber"]):
         await sess.delete_session(numero)
         await enviar_texto(numero, f"Tudo certo, {saudacao}! Qualquer coisa é só chamar. 😊")
