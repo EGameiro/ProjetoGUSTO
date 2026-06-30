@@ -471,6 +471,12 @@ async def _enviar_resumo(numero: str, sessao: dict):
         tamanho = item.get("tamanho") or ""
         valor_unit = await get_preco_prato(item.get("mistura") or "", tamanho, restaurante_id)
         item["valor_unitario"] = valor_unit
+        # Propaga o preço calculado de volta para a sessão original
+        for orig in itens:
+            if (orig.get("mistura") == item.get("mistura") and
+                orig.get("tamanho") == item.get("tamanho") and
+                orig.get("valor_unitario") is None):
+                orig["valor_unitario"] = valor_unit
         valor_linha = valor_unit * qtd
         total += valor_linha
         obs = f"\n   Obs: {item['observacoes']}" if item.get("observacoes") else ""
@@ -495,4 +501,6 @@ async def _enviar_resumo(numero: str, sessao: dict):
         f"*Confirma?* Responda *sim* ou *não*."
     )
 
+    # Persiste os preços calculados na sessão para que salvar_pedido_individual os use
+    await sess.set_session(numero, {**sessao, "itens": itens, "etapa": "aguardando_confirmacao"})
     await enviar_texto(numero, resumo)
