@@ -11,6 +11,9 @@ def get_redis() -> aioredis.Redis:
             config.REDIS_URL,
             encoding="utf-8",
             decode_responses=True,
+            socket_keepalive=True,
+            retry_on_timeout=True,
+            health_check_interval=30,
         )
     return _client
 
