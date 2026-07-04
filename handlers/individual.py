@@ -215,6 +215,33 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
     pratos          = [nome for nome, _ in c["pratos"]]
     acompanhamentos = c["acompanhamentos"]
 
+    # Acompanhamento simples sem citar o prato (ex: "maionese", "farofa e salada")
+    itens_aguardando_acomp = [
+        i for i in sessao.get("itens", [])
+        if not i.get("acomp_1") and not i.get("sem_acompanhamento")
+    ]
+    if itens_aguardando_acomp:
+        texto_lower = texto.lower()
+        acomps_mencionados = [a for a in acompanhamentos if a.lower() in texto_lower]
+        if acomps_mencionados:
+            mistura_alvo = (itens_aguardando_acomp[0].get("mistura") or "").lower()
+            alvos = [i for i in sessao["itens"] if (i.get("mistura") or "").lower() == mistura_alvo] if mistura_alvo else itens_aguardando_acomp
+            for item in alvos:
+                if not item.get("acomp_1"):
+                    item["acomp_1"] = acomps_mencionados[0].title()
+                elif len(acomps_mencionados) > 1 and not item.get("acomp_2"):
+                    item["acomp_2"] = acomps_mencionados[1].title()
+            faltando = _campos_faltando(sessao)
+            if faltando:
+                sessao["etapa"] = "coletando"
+                await sess.set_session(numero, sessao)
+                await enviar_texto(numero, await _montar_pergunta_faltando(sessao, faltando, restaurante_id))
+            else:
+                sessao["etapa"] = "aguardando_confirmacao"
+                await sess.set_session(numero, sessao)
+                await _enviar_resumo(numero, sessao)
+            return
+
     extraido = await extrair_pedido(texto, pratos=pratos, acompanhamentos=acompanhamentos)
     log.info(f"[{numero}] extraido={extraido}")
 
