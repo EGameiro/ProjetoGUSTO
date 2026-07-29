@@ -48,6 +48,14 @@ REGRAS:
 - Se mencionou apenas um prato sem quantidade, use quantidade=1
 - Para acompanhamentos: faça correspondência parcial com a lista fornecida e use o nome EXATO
 - tamanho e acompanhamentos mencionados sem especificar o prato se aplicam a TODOS os itens
+
+OBSERVAÇÕES DO PRATO (campo "observacoes"):
+- Capture QUALQUER personalização ou preferência de preparo mencionada pelo cliente
+- Exemplos: "sem feijão", "pouco arroz", "mais feijão", "sem banana", "sem farofa", "bem passado",
+  "sem molho", "pouco sal", "capricha no arroz", "sem cebola", ou qualquer frase que indique
+  uma mudança no formato padrão do prato
+- Se a observação não especificar o prato, aplique ao item mais recente ou a todos
+- Registre a observação exatamente como o cliente expressou, de forma concisa
 """
 
 _SYSTEM_ASSISTENTE = """\
@@ -131,7 +139,8 @@ def _nada_extraido(resultado: dict) -> bool:
     """Retorna True se o extrator não encontrou nenhum campo útil."""
     itens = resultado.get("itens", [])
     tem_dado = any(
-        i.get("mistura") or i.get("tamanho") or i.get("acomp_1") or i.get("sem_acompanhamento")
+        i.get("mistura") or i.get("tamanho") or i.get("acomp_1")
+        or i.get("sem_acompanhamento") or i.get("observacoes")
         for i in itens
     )
     return not tem_dado and not resultado.get("tipo_entrega") and not resultado.get("endereco") and not resultado.get("hora_retirada")

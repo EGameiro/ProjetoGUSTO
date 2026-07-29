@@ -600,11 +600,10 @@ async def _enviar_resumo(numero: str, sessao: dict):
                 orig["valor_unitario"] = valor_unit
         valor_linha = valor_unit * qtd
         total += valor_linha
-        obs = f"\n   Obs: {item['observacoes']}" if item.get("observacoes") else ""
         prefixo = f"{qtd}x " if qtd > 1 else ""
         linhas_itens.append(
             f"{i}. {prefixo}*{item.get('mistura')}* — {item.get('tamanho')}\n"
-            f"   Acomp: {acomps_texto} | {brl(valor_linha)}{obs}"
+            f"   Acomp: {acomps_texto} | {brl(valor_linha)}"
         )
 
     entrega = (
@@ -613,12 +612,21 @@ async def _enviar_resumo(numero: str, sessao: dict):
         else f"Entrega em: {sessao.get('endereco')}"
     )
 
+    # Coleta observações de todos os itens para exibir após o endereço
+    obs_linhas = []
+    for item in vistos.values():
+        if item.get("observacoes"):
+            mistura = item.get("mistura") or "Prato"
+            obs_linhas.append(f"• {mistura}: {item['observacoes']}")
+    obs_bloco = f"\n⚠️ *Observações:*\n" + "\n".join(obs_linhas) if obs_linhas else ""
+
     itens_texto = "\n".join(linhas_itens)
     resumo = (
         f"*Resumo do pedido:*\n\n"
         f"{itens_texto}\n\n"
         f"*Total: {brl(total)}*\n"
-        f"{entrega}\n\n"
+        f"{entrega}"
+        f"{obs_bloco}\n\n"
         f"*Confirma?* Responda *sim* ou *não*."
     )
 
