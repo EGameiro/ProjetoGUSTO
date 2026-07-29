@@ -168,6 +168,21 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
             await _enviar_resumo(numero, sessao)
         return
 
+    # Endereço direto: sessão aguardando endereço e usuário não usou palavra de confirmação
+    # (cobre tanto quem não tem preferência quanto quem digitou um endereço novo)
+    if sessao.get("tipo_entrega") == "entrega" and not sessao.get("endereco") and not confirmou:
+        sessao["endereco"] = texto.strip()
+        faltando = _campos_faltando(sessao)
+        if faltando:
+            sessao["etapa"] = "coletando"
+            await sess.set_session(numero, sessao)
+            await enviar_texto(numero, await _montar_pergunta_faltando(sessao, faltando, restaurante_id))
+        else:
+            sessao["etapa"] = "aguardando_confirmacao"
+            await sess.set_session(numero, sessao)
+            await _enviar_resumo(numero, sessao)
+        return
+
     # Tamanho simples sem citar o prato (ex: "normal", "mini", "executiva")
     _TAMANHOS = {"mini": "Mini", "normal": "Normal", "executiva": "Executiva"}
     tamanho_simples = _TAMANHOS.get(texto.lower().strip())
