@@ -435,14 +435,16 @@ async def _mesclar(sessao: dict, extraido: dict, restaurante_id: int = 1):
                 novo.pop("quantidade", None)
                 itens_sessao.append(novo)
 
-    # Tamanho/acomp sem prato → aplica ao primeiro item incompleto da sessão
+    # Tamanho/acomp/observação sem prato → aplica ao primeiro item da sessão
     for item_ext in itens_sem_mistura:
-        tem_dado = item_ext.get("tamanho") or item_ext.get("acomp_1") or item_ext.get("sem_acompanhamento")
+        tem_dado = (item_ext.get("tamanho") or item_ext.get("acomp_1")
+                    or item_ext.get("sem_acompanhamento") or item_ext.get("observacoes"))
         if not tem_dado:
             continue
-        alvo = next(
-            (i for i in itens_sessao if not i.get("tamanho") or not i.get("acomp_1")),
-            None
+        # Prioriza item sem tamanho; se todos já têm tamanho, aplica ao primeiro
+        alvo = (
+            next((i for i in itens_sessao if not i.get("tamanho") or not i.get("acomp_1")), None)
+            or (itens_sessao[0] if itens_sessao else None)
         )
         if alvo:
             # Aplica a TODOS os itens com a mesma mistura do alvo
