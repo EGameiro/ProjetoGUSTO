@@ -23,27 +23,38 @@ async def _buscar_mysql(restaurante_id: int) -> dict:
 
     rows = await fetchall(
         """
-        SELECT tipo, nome, preco_mini, preco_normal, preco_executiva
+        SELECT nome, preco_mini, preco_normal, preco_executiva, acompanhamentos
         FROM cardapio_web
         WHERE restaurante_id = %s
           AND dia_semana = %s
           AND empresa_id IS NULL
+          AND tipo = 'prato'
           AND ativo = 1
-        ORDER BY tipo, ordem, nome
+        ORDER BY ordem, nome
         """,
         (restaurante_id, dia),
     )
 
-    # Lista de tuplas (nome, {Mini: x, Normal: x, Executiva: x}) para cada prato
     pratos = [
         (r["nome"], {
             "Mini":      float(r["preco_mini"])      if r["preco_mini"]      else None,
             "Normal":    float(r["preco_normal"])    if r["preco_normal"]    else None,
             "Executiva": float(r["preco_executiva"]) if r["preco_executiva"] else None,
         })
-        for r in rows if r["tipo"] == "prato"
+        for r in rows
     ]
-    acompanhamentos = [r["nome"] for r in rows if r["tipo"] == "acompanhamento"]
+
+    # Acompanhamentos: union de todos os pratos do dia, deduplica mantendo ordem
+    acomps_set: list[str] = []
+    vistos: set[str] = set()
+    for r in rows:
+        if r.get("acompanhamentos"):
+            for a in r["acompanhamentos"].split(","):
+                a = a.strip()
+                if a and a.lower() not in vistos:
+                    vistos.add(a.lower())
+                    acomps_set.append(a)
+    acompanhamentos = acomps_set
     tamanhos = ["Mini", "Normal", "Executiva"]
 
     return {
