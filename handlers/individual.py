@@ -580,9 +580,17 @@ async def _enviar_resumo(numero: str, sessao: dict):
             vistos[chave] = {**item, "_qtd": 1}
 
     restaurante_id = sessao.get("restaurante_id", 1)
+    c_cardapio = await get_cardapio_hoje(restaurante_id)
+    _acomps_por_prato = {nome.lower(): acomps_p for nome, _, acomps_p in c_cardapio["pratos"]}
+
     for i, item in enumerate(vistos.values(), 1):
         qtd = item["_qtd"]
         acomps = [a for a in [item.get("acomp_1"), item.get("acomp_2")] if a]
+
+        # Feijoada tem acompanhamentos fixos — busca do cardápio se não estiverem no item
+        if not acomps and _is_feijoada(item.get("mistura") or ""):
+            acomps = _acomps_por_prato.get((item.get("mistura") or "").lower(), [])
+
         acomps_texto = " + ".join(acomps) if acomps else "Nenhum"
         tamanho = item.get("tamanho") or ""
         valor_unit = await get_preco_prato(item.get("mistura") or "", tamanho, restaurante_id)
