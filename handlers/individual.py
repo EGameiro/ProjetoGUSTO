@@ -1,4 +1,5 @@
 import logging
+import re
 from services import session as sess
 from services.uazapi import enviar_texto
 from services.cardapio import formatar_cardapio, get_acompanhamentos_hoje, get_preco_prato, get_cardapio_hoje, _is_feijoada
@@ -6,6 +7,18 @@ from services.extrator import extrair_pedido, responder_pergunta, _nada_extraido
 from db.pedidos import salvar_pedido_individual, buscar_nome_cliente, buscar_pedido_aberto, buscar_preferencias_cliente
 
 log = logging.getLogger(__name__)
+
+
+def _acomp_mencionado(acomp: str, texto: str) -> bool:
+    """Verifica se um acompanhamento foi mencionado no texto.
+    Faz matching exato OU por palavra significativa (ex: 'maionese' bate 'Maionese E Salada').
+    """
+    if acomp.lower() in texto:
+        return True
+    for palavra in acomp.lower().split():
+        if len(palavra) >= 4 and re.search(r'\b' + re.escape(palavra) + r'\b', texto):
+            return True
+    return False
 
 
 def brl(valor: float) -> str:
@@ -239,7 +252,7 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
             if nome_p.lower() == mistura_ref:
                 acomps_ref = acomps_p
                 break
-        acomps_mencionados = [a for a in acomps_ref if a.lower() in texto_lower]
+        acomps_mencionados = [a for a in acomps_ref if _acomp_mencionado(a, texto_lower)]
         if acomps_mencionados:
             mistura_alvo = (itens_aguardando_acomp[0].get("mistura") or "").lower()
             alvos = [i for i in sessao["itens"] if (i.get("mistura") or "").lower() == mistura_alvo] if mistura_alvo else itens_aguardando_acomp
