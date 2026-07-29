@@ -92,17 +92,30 @@ def _normalizar_item(item: dict) -> dict:
     return {**_ITEM_VAZIO, **item}
 
 
-async def extrair_pedido(texto: str, pratos: list[str] | None = None, acompanhamentos: list[str] | None = None) -> dict:
+async def extrair_pedido(
+    texto: str,
+    pratos: list[str] | None = None,
+    acompanhamentos: list[str] | None = None,
+    pratos_com_acomps: list[tuple] | None = None,
+) -> dict:
     """
     Extrai pedido da mensagem. Retorna dict com:
       itens: lista de {mistura, tamanho, acomp_1, acomp_2, sem_acompanhamento, observacoes}
       tipo_entrega, endereco, hora_retirada
     """
     system = _SYSTEM_EXTRATOR_BASE
-    if pratos:
+    if pratos_com_acomps:
+        linhas = []
+        for nome, _, acomps in pratos_com_acomps:
+            if acomps:
+                linhas.append(f"  - {nome}: {', '.join(acomps)}")
+            else:
+                linhas.append(f"  - {nome}: (sem acompanhamentos)")
+        system += "\nAcompanhamentos POR PRATO (use o nome EXATO e somente os do prato pedido):\n" + "\n".join(linhas)
+    elif pratos:
         system += f"\nPratos disponíveis hoje: {', '.join(pratos)}"
-    if acompanhamentos:
-        system += f"\nAcompanhamentos disponíveis (use o nome EXATO): {', '.join(acompanhamentos)}"
+        if acompanhamentos:
+            system += f"\nAcompanhamentos disponíveis (use o nome EXATO): {', '.join(acompanhamentos)}"
 
     try:
         payload = {

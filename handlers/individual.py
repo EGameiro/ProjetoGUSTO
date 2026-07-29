@@ -105,9 +105,7 @@ async def _iniciar_coleta(numero: str, nome: str, saudacao: str, restaurante_id:
     # Se o lead mandou um pedido direto sem saudação, tenta extrair antes de mostrar cardápio
     if texto_inicial:
         c = await get_cardapio_hoje(restaurante_id)
-        pratos = [n for n, _, _a in c["pratos"]]
-        acompanhamentos = c["acompanhamentos"]
-        extraido = await extrair_pedido(texto_inicial, pratos=pratos, acompanhamentos=acompanhamentos)
+        extraido = await extrair_pedido(texto_inicial, pratos_com_acomps=c["pratos"])
 
         if not _nada_extraido(extraido):
             await sess.set_session(numero, sessao_inicial)
@@ -225,7 +223,6 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
         return
 
     c = await get_cardapio_hoje(restaurante_id)
-    pratos          = [nome for nome, _, _acomps in c["pratos"]]
     acompanhamentos = c["acompanhamentos"]
 
     # Acompanhamento simples sem citar o prato (ex: "maionese", "farofa e salada")
@@ -262,7 +259,7 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
                 await _enviar_resumo(numero, sessao)
             return
 
-    extraido = await extrair_pedido(texto, pratos=pratos, acompanhamentos=acompanhamentos)
+    extraido = await extrair_pedido(texto, pratos_com_acomps=c["pratos"])
     log.info(f"[{numero}] extraido={extraido}")
 
     if _nada_extraido(extraido):
@@ -352,9 +349,7 @@ async def _receber_confirmacao(numero: str, sessao: dict, texto: str):
     else:
         # Tenta extrair um novo item do texto (ex: "incluir uma normal de feijoada")
         c = await get_cardapio_hoje(restaurante_id)
-        pratos = [nome for nome, _, _acomps in c["pratos"]]
-        acompanhamentos = c["acompanhamentos"]
-        extraido = await extrair_pedido(texto, pratos=pratos, acompanhamentos=acompanhamentos)
+        extraido = await extrair_pedido(texto, pratos_com_acomps=c["pratos"])
 
         if not _nada_extraido(extraido):
             sessao["etapa"] = "coletando"
