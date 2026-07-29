@@ -321,6 +321,8 @@ async def _receber_confirmacao(numero: str, sessao: dict, texto: str):
         await _inicio(numero, restaurante_id=sessao.get("restaurante_id", 1))
         return
 
+    restaurante_id = sessao.get("restaurante_id", 1)
+
     if texto.lower() in ["sim", "s", "yes", "confirmo", "ok", "pode", "pode ser"]:
         try:
             pedido_id = await salvar_pedido_individual(sessao, numero)
@@ -341,7 +343,26 @@ async def _receber_confirmacao(numero: str, sessao: dict, texto: str):
         await enviar_texto(numero, "Pedido cancelado. Quando quiser, é só chamar!")
 
     else:
-        await _enviar_resumo(numero, sessao)
+        # Tenta extrair um novo item do texto (ex: "incluir uma normal de feijoada")
+        c = await get_cardapio_hoje(restaurante_id)
+        pratos = [nome for nome, _ in c["pratos"]]
+        acompanhamentos = c["acompanhamentos"]
+        extraido = await extrair_pedido(texto, pratos=pratos, acompanhamentos=acompanhamentos)
+
+        if not _nada_extraido(extraido):
+            sessao["etapa"] = "coletando"
+            await _mesclar(sessao, extraido, restaurante_id)
+            faltando = _campos_faltando(sessao)
+            if faltando:
+                sessao["etapa"] = "coletando"
+                await sess.set_session(numero, sessao)
+                await enviar_texto(numero, await _montar_pergunta_faltando(sessao, faltando, restaurante_id))
+            else:
+                sessao["etapa"] = "aguardando_confirmacao"
+                await sess.set_session(numero, sessao)
+                await _enviar_resumo(numero, sessao)
+        else:
+            await _enviar_resumo(numero, sessao)
 
 
 async def _receber_intencao(numero: str, sessao: dict, texto: str, restaurante_id: int):
