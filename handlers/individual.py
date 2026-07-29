@@ -154,6 +154,19 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
             await _enviar_resumo(numero, sessao)
         return
 
+    # Caso 1c: usuário sinalizou que vai mudar o endereço — limpa preferência e pede novo endereço
+    _VAI_MUDAR = {"mudar", "vou mudar", "mudou", "outro", "outro endereço", "outro endereco",
+                  "diferente", "não", "nao", "mudei", "vai mudar", "quero mudar"}
+    if (not sessao.get("endereco")
+            and sessao.get("pref_endereco")
+            and t in _VAI_MUDAR):
+        sessao["pref_endereco"] = None  # limpa preferência para não perguntar de novo
+        if not sessao.get("tipo_entrega"):
+            sessao["tipo_entrega"] = sessao.get("pref_tipo_entrega") or "entrega"
+        await sess.set_session(numero, sessao)
+        await enviar_texto(numero, "Tudo bem! Qual é o novo endereço de entrega?")
+        return
+
     # Caso 2: tipo já definido como entrega mas endereço faltando — confirma endereço da preferência
     if sessao.get("tipo_entrega") == "entrega" and not sessao.get("endereco") and sessao.get("pref_endereco") and confirmou:
         sessao["endereco"] = sessao["pref_endereco"]
