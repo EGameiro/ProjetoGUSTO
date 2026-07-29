@@ -406,8 +406,6 @@ async def _mesclar(sessao: dict, extraido: dict, restaurante_id: int = 1):
     itens_sem_mistura = [i for i in itens_extraidos if not (i.get("mistura") or "").strip()]
     itens_com_mistura = [i for i in itens_extraidos if (i.get("mistura") or "").strip()]
 
-    log.info(f"[mesclar] itens_com_mistura={itens_com_mistura} | itens_sem_mistura={itens_sem_mistura}")
-
     for item_ext in itens_com_mistura:
         mistura_ext = item_ext["mistura"].lower()
         quantidade = max(1, int(item_ext.get("quantidade") or 1))
@@ -437,13 +435,11 @@ async def _mesclar(sessao: dict, extraido: dict, restaurante_id: int = 1):
                 novo = {**item_ext, "mistura": nome_oficial, "valor_unitario": None}
                 novo.pop("quantidade", None)
                 itens_sessao.append(novo)
-            log.info(f"[mesclar] novo item: {nome_oficial} obs={item_ext.get('observacoes')}")
 
     # Tamanho/acomp/observação sem prato → aplica ao primeiro item da sessão
     for item_ext in itens_sem_mistura:
         tem_dado = (item_ext.get("tamanho") or item_ext.get("acomp_1")
                     or item_ext.get("sem_acompanhamento") or item_ext.get("observacoes"))
-        log.info(f"[mesclar] sem_mistura: item_ext={item_ext} tem_dado={tem_dado}")
         if not tem_dado:
             continue
         # Prioriza item sem tamanho; se todos já têm tamanho, aplica ao primeiro
@@ -623,7 +619,6 @@ async def _enviar_resumo(numero: str, sessao: dict):
     )
 
     # Coleta observações de todos os itens para exibir após o endereço
-    log.info(f"[resumo] itens no resumo: {[{k: v for k, v in i.items() if k != '_qtd'} for i in vistos.values()]}")
     obs_linhas = []
     for item in vistos.values():
         if item.get("observacoes"):
