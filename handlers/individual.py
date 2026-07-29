@@ -154,42 +154,9 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
             await _enviar_resumo(numero, sessao)
         return
 
-    # Caso 1b: preferência é entrega, tem endereço preferido, mas usuário digitou um endereço novo
-    if (not sessao.get("tipo_entrega")
-            and sessao.get("pref_tipo_entrega") == "entrega"
-            and sessao.get("pref_endereco")
-            and not confirmou):
-        sessao["tipo_entrega"] = "entrega"
-        sessao["endereco"] = texto.strip()
-        faltando = _campos_faltando(sessao)
-        if faltando:
-            sessao["etapa"] = "coletando"
-            await sess.set_session(numero, sessao)
-            await enviar_texto(numero, await _montar_pergunta_faltando(sessao, faltando, restaurante_id))
-        else:
-            sessao["etapa"] = "aguardando_confirmacao"
-            await sess.set_session(numero, sessao)
-            await _enviar_resumo(numero, sessao)
-        return
-
     # Caso 2: tipo já definido como entrega mas endereço faltando — confirma endereço da preferência
     if sessao.get("tipo_entrega") == "entrega" and not sessao.get("endereco") and sessao.get("pref_endereco") and confirmou:
         sessao["endereco"] = sessao["pref_endereco"]
-        faltando = _campos_faltando(sessao)
-        if faltando:
-            sessao["etapa"] = "coletando"
-            await sess.set_session(numero, sessao)
-            await enviar_texto(numero, await _montar_pergunta_faltando(sessao, faltando, restaurante_id))
-        else:
-            sessao["etapa"] = "aguardando_confirmacao"
-            await sess.set_session(numero, sessao)
-            await _enviar_resumo(numero, sessao)
-        return
-
-    # Endereço direto: sessão aguardando endereço e usuário não usou palavra de confirmação
-    # (cobre tanto quem não tem preferência quanto quem digitou um endereço novo)
-    if sessao.get("tipo_entrega") == "entrega" and not sessao.get("endereco") and not confirmou:
-        sessao["endereco"] = texto.strip()
         faltando = _campos_faltando(sessao)
         if faltando:
             sessao["etapa"] = "coletando"
@@ -279,6 +246,40 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
     log.info(f"[{numero}] extraido={extraido}")
 
     if _nada_extraido(extraido):
+        # Fallback: sessão aguardando endereço e extrator não reconheceu nenhum pedido
+        # → tratar texto como endereço (ex: "Av das Notas 177")
+        if sessao.get("tipo_entrega") == "entrega" and not sessao.get("endereco"):
+            sessao["endereco"] = texto.strip()
+            faltando = _campos_faltando(sessao)
+            if faltando:
+                sessao["etapa"] = "coletando"
+                await sess.set_session(numero, sessao)
+                await enviar_texto(numero, await _montar_pergunta_faltando(sessao, faltando, restaurante_id))
+            else:
+                sessao["etapa"] = "aguardando_confirmacao"
+                await sess.set_session(numero, sessao)
+                await _enviar_resumo(numero, sessao)
+            return
+
+        # Fallback: preferência de entrega, sem endereço definido, extrator não reconheceu pedido
+        # → usuário digitou endereço novo em resposta a "mesmo endereço ou vai mudar?"
+        if (not sessao.get("tipo_entrega")
+                and sessao.get("pref_tipo_entrega") == "entrega"
+                and sessao.get("pref_endereco")
+                and not confirmou):
+            sessao["tipo_entrega"] = "entrega"
+            sessao["endereco"] = texto.strip()
+            faltando = _campos_faltando(sessao)
+            if faltando:
+                sessao["etapa"] = "coletando"
+                await sess.set_session(numero, sessao)
+                await enviar_texto(numero, await _montar_pergunta_faltando(sessao, faltando, restaurante_id))
+            else:
+                sessao["etapa"] = "aguardando_confirmacao"
+                await sess.set_session(numero, sessao)
+                await _enviar_resumo(numero, sessao)
+            return
+
         cardapio = await formatar_cardapio(restaurante_id)
         resposta = await responder_pergunta(texto, cardapio)
         if resposta:
