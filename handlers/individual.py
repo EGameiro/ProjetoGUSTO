@@ -154,6 +154,24 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
             await _enviar_resumo(numero, sessao)
         return
 
+    # Caso 1b: preferência é entrega, tem endereço preferido, mas usuário digitou um endereço novo
+    if (not sessao.get("tipo_entrega")
+            and sessao.get("pref_tipo_entrega") == "entrega"
+            and sessao.get("pref_endereco")
+            and not confirmou):
+        sessao["tipo_entrega"] = "entrega"
+        sessao["endereco"] = texto.strip()
+        faltando = _campos_faltando(sessao)
+        if faltando:
+            sessao["etapa"] = "coletando"
+            await sess.set_session(numero, sessao)
+            await enviar_texto(numero, await _montar_pergunta_faltando(sessao, faltando, restaurante_id))
+        else:
+            sessao["etapa"] = "aguardando_confirmacao"
+            await sess.set_session(numero, sessao)
+            await _enviar_resumo(numero, sessao)
+        return
+
     # Caso 2: tipo já definido como entrega mas endereço faltando — confirma endereço da preferência
     if sessao.get("tipo_entrega") == "entrega" and not sessao.get("endereco") and sessao.get("pref_endereco") and confirmou:
         sessao["endereco"] = sessao["pref_endereco"]
