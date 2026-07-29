@@ -248,9 +248,9 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
             alvos = [i for i in sessao["itens"] if (i.get("mistura") or "").lower() == mistura_alvo] if mistura_alvo else itens_aguardando_acomp
             for item in alvos:
                 if not item.get("acomp_1"):
-                    item["acomp_1"] = acomps_mencionados[0].title()
+                    item["acomp_1"] = acomps_mencionados[0]
                 elif len(acomps_mencionados) > 1 and not item.get("acomp_2"):
-                    item["acomp_2"] = acomps_mencionados[1].title()
+                    item["acomp_2"] = acomps_mencionados[1]
             faltando = _campos_faltando(sessao)
             if faltando:
                 sessao["etapa"] = "coletando"
@@ -459,6 +459,14 @@ async def _mesclar(sessao: dict, extraido: dict, restaurante_id: int = 1):
                         a[campo] = item_ext[campo]
                 if item_ext.get("sem_acompanhamento"):
                     a["sem_acompanhamento"] = True
+
+    # Normaliza nomes de acomps para o nome canônico do cardápio (case-insensitive)
+    todos_acomps = {a.lower(): a for _, _, acomps_p in c["pratos"] for a in acomps_p}
+    for item in itens_sessao:
+        for campo in ("acomp_1", "acomp_2"):
+            val = item.get(campo)
+            if val:
+                item[campo] = todos_acomps.get(val.lower(), val)
 
     sessao["itens"] = itens_sessao
 
