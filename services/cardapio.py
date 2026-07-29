@@ -130,15 +130,11 @@ async def formatar_cardapio(restaurante_id: int = 1) -> str:
                     linhas.append(f"  ➜ Acompanhamentos: {lista}")
                 else:
                     linhas.append(f"  ➜ Acompanhamentos (até 2): {lista}")
+            linhas.append("")
     else:
         linhas.append("_Cardápio ainda não configurado para hoje._")
 
-    if c["tamanhos"]:
-        linhas.append("\n*Tamanhos disponíveis:*")
-        for t in c["tamanhos"]:
-            linhas.append(f"• {t}")
-
-    linhas.append("\nVila Branca: entrega grátis")
+    linhas.append("Vila Branca: entrega grátis")
     return "\n".join(linhas)
 
 
