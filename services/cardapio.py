@@ -35,26 +35,28 @@ async def _buscar_mysql(restaurante_id: int) -> dict:
         (restaurante_id, dia),
     )
 
-    pratos = [
-        (r["nome"], {
+    # pratos: lista de (nome, precos_dict, acomps_lista)
+    pratos = []
+    acomps_union: list[str] = []
+    vistos: set[str] = set()
+    for r in rows:
+        precos = {
             "Mini":      float(r["preco_mini"])      if r["preco_mini"]      else None,
             "Normal":    float(r["preco_normal"])    if r["preco_normal"]    else None,
             "Executiva": float(r["preco_executiva"]) if r["preco_executiva"] else None,
-        })
-        for r in rows
-    ]
-
-    # Acompanhamentos: union de todos os pratos do dia, deduplica mantendo ordem
-    acomps_set: list[str] = []
-    vistos: set[str] = set()
-    for r in rows:
+        }
+        acomps_prato: list[str] = []
         if r.get("acompanhamentos"):
             for a in r["acompanhamentos"].split(","):
                 a = a.strip()
-                if a and a.lower() not in vistos:
-                    vistos.add(a.lower())
-                    acomps_set.append(a)
-    acompanhamentos = acomps_set
+                if a:
+                    acomps_prato.append(a)
+                    if a.lower() not in vistos:
+                        vistos.add(a.lower())
+                        acomps_union.append(a)
+        pratos.append((r["nome"], precos, acomps_prato))
+
+    acompanhamentos = acomps_union
     tamanhos = ["Mini", "Normal", "Executiva"]
 
     return {
@@ -99,29 +101,37 @@ async def get_cardapio_hoje(restaurante_id: int = 1) -> dict:
     }
 
 
+_FEIJOADA_KEYWORDS = {"feijoada"}
+
+
+def _is_feijoada(nome: str) -> bool:
+    return any(k in nome.lower() for k in _FEIJOADA_KEYWORDS)
+
+
 async def formatar_cardapio(restaurante_id: int = 1) -> str:
     c = await get_cardapio_hoje(restaurante_id)
     linhas = [f"*Cardápio — {c['dia']}*\n"]
 
     if c["pratos"]:
         linhas.append("*Pratos do dia:*")
-        for nome, precos in c["pratos"]:
+        for nome, precos, acomps in c["pratos"]:
             partes = []
             for tam in ["Mini", "Normal", "Executiva"]:
                 p = precos.get(tam)
                 if p:
                     partes.append(f"{tam} {brl(p)}")
+            linha_prato = f"• {nome}"
             if partes:
-                linhas.append(f"• {nome} — {' | '.join(partes)}")
-            else:
-                linhas.append(f"• {nome}")
+                linha_prato += f" — {' | '.join(partes)}"
+            linhas.append(linha_prato)
+            if acomps:
+                lista = ", ".join(acomps[:-1]) + f" e {acomps[-1]}" if len(acomps) > 1 else acomps[0]
+                if _is_feijoada(nome):
+                    linhas.append(f"  ➜ Acompanhamentos: {lista}")
+                else:
+                    linhas.append(f"  ➜ Acompanhamentos (até 2): {lista}")
     else:
         linhas.append("_Cardápio ainda não configurado para hoje._")
-
-    if c["acompanhamentos"]:
-        linhas.append("\n*Acompanhamentos* (escolha até 2):")
-        for a in c["acompanhamentos"]:
-            linhas.append(f"• {a}")
 
     if c["tamanhos"]:
         linhas.append("\n*Tamanhos disponíveis:*")
@@ -141,7 +151,7 @@ async def get_preco_prato(nome_prato: str, tamanho: str, restaurante_id: int = 1
     """Retorna o preço de um prato específico para um tamanho específico."""
     c = await get_cardapio_hoje(restaurante_id)
     nome_lower = nome_prato.lower()
-    for nome, precos in c["pratos"]:
+    for nome, precos, _ in c["pratos"]:
         if nome.lower() == nome_lower:
             return precos.get(tamanho) or 0.0
     return 0.0

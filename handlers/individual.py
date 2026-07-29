@@ -105,7 +105,7 @@ async def _iniciar_coleta(numero: str, nome: str, saudacao: str, restaurante_id:
     # Se o lead mandou um pedido direto sem saudação, tenta extrair antes de mostrar cardápio
     if texto_inicial:
         c = await get_cardapio_hoje(restaurante_id)
-        pratos = [n for n, _ in c["pratos"]]
+        pratos = [n for n, _, _a in c["pratos"]]
         acompanhamentos = c["acompanhamentos"]
         extraido = await extrair_pedido(texto_inicial, pratos=pratos, acompanhamentos=acompanhamentos)
 
@@ -225,7 +225,7 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
         return
 
     c = await get_cardapio_hoje(restaurante_id)
-    pratos          = [nome for nome, _ in c["pratos"]]
+    pratos          = [nome for nome, _, _acomps in c["pratos"]]
     acompanhamentos = c["acompanhamentos"]
 
     # Acompanhamento simples sem citar o prato (ex: "maionese", "farofa e salada")
@@ -345,7 +345,7 @@ async def _receber_confirmacao(numero: str, sessao: dict, texto: str):
     else:
         # Tenta extrair um novo item do texto (ex: "incluir uma normal de feijoada")
         c = await get_cardapio_hoje(restaurante_id)
-        pratos = [nome for nome, _ in c["pratos"]]
+        pratos = [nome for nome, _, _acomps in c["pratos"]]
         acompanhamentos = c["acompanhamentos"]
         extraido = await extrair_pedido(texto, pratos=pratos, acompanhamentos=acompanhamentos)
 
@@ -410,7 +410,7 @@ async def _mesclar(sessao: dict, extraido: dict, restaurante_id: int = 1):
 
         # Resolve nome oficial do cardápio
         nome_oficial = item_ext["mistura"]
-        for nome_prato, _ in c["pratos"]:
+        for nome_prato, _, _a in c["pratos"]:
             if nome_prato.lower() in mistura_ext or mistura_ext in nome_prato.lower():
                 nome_oficial = nome_prato
                 break
