@@ -386,6 +386,32 @@ Configurável sem alterar código: variável `PAUSA_ATENDIMENTO_MINUTOS` no pain
 
 ---
 
+## Histórico de Correções
+
+### 2026-07-29 — Correções no fluxo de coleta (`handlers/individual.py`)
+
+**1. Acompanhamento simples sem citar o prato entrava em loop**
+Quando o usuário respondia apenas o acompanhamento ("maionese") sem repetir o prato, `extrair_pedido` retornava vazio (sem prato, sem itens reconhecidos) e caía em `responder_pergunta`. Essa função não tem acesso à sessão, então Claude respondia criativamente mas não salvava o acompanhamento — o agente continuava perguntando o mesmo prato.
+**Correção:** Antes de chamar o extrator, verifica se há itens aguardando acomp e se o texto bate com algum acompanhamento do cardápio — aplica diretamente, sem passar pelo LLM.
+
+**2. Endereço digitado não era salvo na sessão**
+Quando o sistema perguntava "Endereço de entrega?" e o usuário respondia com o endereço ("Av das notas 177"), `extrair_pedido` retornava vazio (sem prato) e caía em `responder_pergunta`, que gerava uma resposta confirmando o endereço mas **não o salvava na sessão**. Na próxima mensagem o agente pedia o endereço novamente.
+**Correção:** Dentro do bloco `_nada_extraido`, se `tipo_entrega=entrega` e `endereco=None`, trata o texto como endereço e salva na sessão.
+
+**3. Novo endereço digitado em resposta a "mesmo endereço ou vai mudar?" perdia os itens do pedido**
+Quando `pref_tipo_entrega=entrega` e o sistema perguntava sobre o endereço anterior, o usuário podia digitar o novo endereço junto com o prato no início da coleta. Se o endereço fosse tratado antes do extrator (como em versões intermediárias), o prato se perdia.
+**Correção:** A captura de endereço como fallback foi movida para **após** `_nada_extraido=True`, garantindo que o extrator tenha prioridade — só trata como endereço quando nenhum dado de pedido foi reconhecido.
+
+**4. "Vou mudar" era interpretado como o novo endereço**
+Quando o agente perguntava "mesmo endereço ou vai mudar?" e o usuário respondia "vou mudar", o fallback de endereço capturava esse texto como endereço literal.
+**Correção:** Adicionado conjunto `_VAI_MUDAR` com variações ("vou mudar", "mudou", "outro", "diferente", "não" etc.). Ao detectar intenção de mudança, o agente limpa `pref_endereco` da sessão e pergunta o novo endereço explicitamente.
+
+**5. Não era possível adicionar itens após o resumo de confirmação**
+Na etapa `aguardando_confirmacao`, qualquer texto que não fosse "sim" ou "não" apenas reexibia o resumo. Se o cliente quisesse adicionar um prato ("incluir uma normal de feijoada"), o pedido era ignorado.
+**Correção:** Em `_receber_confirmacao`, o bloco `else` agora tenta extrair um novo item do texto. Se extraído, mescla na sessão e reexibe o resumo atualizado. Se não extraído, reexibe o resumo normalmente.
+
+---
+
 ## Migrations SQL
 
 | Arquivo | Descrição |
