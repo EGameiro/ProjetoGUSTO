@@ -410,6 +410,23 @@ Quando o agente perguntava "mesmo endereço ou vai mudar?" e o usuário respondi
 Na etapa `aguardando_confirmacao`, qualquer texto que não fosse "sim" ou "não" apenas reexibia o resumo. Se o cliente quisesse adicionar um prato ("incluir uma normal de feijoada"), o pedido era ignorado.
 **Correção:** Em `_receber_confirmacao`, o bloco `else` agora tenta extrair um novo item do texto. Se extraído, mescla na sessão e reexibe o resumo atualizado. Se não extraído, reexibe o resumo normalmente.
 
+### 2026-07-29 — Acompanhamentos por prato e melhorias no cardápio
+
+**6. Acompanhamentos migrados para campo texto no prato**
+Os acompanhamentos deixaram de ser linhas independentes (`tipo='acompanhamento'`) na tabela `cardapio_web` e passaram a ser um campo texto `acompanhamentos VARCHAR(500)` em cada prato (ex: `"Farofa, Maionese, Salada"`). A seção separada foi removida do portal web. Script de migração: `migration_acompanhamentos_no_prato.sql`.
+
+**7. Cardápio exibido com acompanhamentos por prato e seta ➜**
+O agente agora exibe os acompanhamentos logo abaixo de cada prato com `➜ Acompanhamentos (até 2): ...`. A seção "Tamanhos disponíveis" foi removida do cardápio. Pratos são separados por linha em branco.
+
+**8. Feijoada não pergunta acompanhamentos**
+Pratos cujo nome contém "feijoada" têm o campo `acomp` ignorado em `_campos_faltando` — o agente não pergunta acompanhamentos e não valida esse campo. A exibição no cardápio omite o "(até 2)". Controlado por `_is_feijoada(nome)` em `services/cardapio.py`.
+
+**9. Acompanhamentos mostrados por prato na pergunta**
+`_montar_pergunta_faltando` agora busca os acompanhamentos do prato específico em `c["pratos"]` em vez da lista global, mostrando apenas as opções válidas para aquele prato.
+
+**10. Normalização case-insensitive de acompanhamentos**
+Após `_mesclar`, todos os valores de `acomp_1`/`acomp_2` são normalizados contra o dicionário canônico do cardápio via comparação case-insensitive. "salada", "SALADA" e "Salada" são todos resolvidos para o nome exato cadastrado no cardápio.
+
 ---
 
 ## Migrations SQL
