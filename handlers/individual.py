@@ -1,7 +1,7 @@
 import logging
 from services import session as sess
 from services.uazapi import enviar_texto
-from services.cardapio import formatar_cardapio, get_acompanhamentos_hoje, get_preco_prato, get_cardapio_hoje
+from services.cardapio import formatar_cardapio, get_acompanhamentos_hoje, get_preco_prato, get_cardapio_hoje, _is_feijoada
 from services.extrator import extrair_pedido, responder_pergunta, _nada_extraido
 from db.pedidos import salvar_pedido_individual, buscar_nome_cliente, buscar_pedido_aberto, buscar_preferencias_cliente
 
@@ -231,11 +231,18 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
     # Acompanhamento simples sem citar o prato (ex: "maionese", "farofa e salada")
     itens_aguardando_acomp = [
         i for i in sessao.get("itens", [])
-        if not i.get("acomp_1") and not i.get("sem_acompanhamento")
+        if not i.get("acomp_1") and not i.get("sem_acompanhamento") and not _is_feijoada(i.get("mistura") or "")
     ]
     if itens_aguardando_acomp:
         texto_lower = texto.lower()
-        acomps_mencionados = [a for a in acompanhamentos if a.lower() in texto_lower]
+        # Usa acomps do prato específico para validar
+        mistura_ref = (itens_aguardando_acomp[0].get("mistura") or "").lower()
+        acomps_ref = acompanhamentos
+        for nome_p, _, acomps_p in c["pratos"]:
+            if nome_p.lower() == mistura_ref:
+                acomps_ref = acomps_p
+                break
+        acomps_mencionados = [a for a in acomps_ref if a.lower() in texto_lower]
         if acomps_mencionados:
             mistura_alvo = (itens_aguardando_acomp[0].get("mistura") or "").lower()
             alvos = [i for i in sessao["itens"] if (i.get("mistura") or "").lower() == mistura_alvo] if mistura_alvo else itens_aguardando_acomp
@@ -480,7 +487,8 @@ def _campos_faltando(sessao: dict) -> list:
             vistos.add(chave)
             if not item.get("tamanho"):
                 faltando.append(("tamanho", label, chave))
-            if not item.get("acomp_1") and not item.get("sem_acompanhamento"):
+            # Feijoada tem acompanhamentos fixos — não perguntar
+            if not item.get("acomp_1") and not item.get("sem_acompanhamento") and not _is_feijoada(mistura):
                 faltando.append(("acomp", label, chave))
 
     # Campos globais
@@ -513,7 +521,15 @@ async def _montar_pergunta_faltando(sessao: dict, faltando: list, restaurante_id
                 opcoes = " | ".join(c["tamanhos"])
                 partes.append(f"• *Tamanho:* {opcoes}")
             elif tipo == "acomp":
-                lista = ", ".join(a.title() for a in c["acompanhamentos"])
+                # Busca acomps do prato específico
+                acomps_prato: list[str] = []
+                for nome_p, _, acomps_p in c["pratos"]:
+                    if nome_p.lower() == primeiro_chave:
+                        acomps_prato = acomps_p
+                        break
+                if not acomps_prato:
+                    acomps_prato = c["acompanhamentos"]
+                lista = ", ".join(a.title() for a in acomps_prato)
                 partes.append(f"• *Acompanhamentos* (até 2): {lista}")
         return "\n".join(partes)
 
