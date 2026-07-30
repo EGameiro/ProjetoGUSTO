@@ -1,7 +1,7 @@
 import logging
 import time
-from datetime import date
 from db.connection import fetchall
+from services.tz import today_br
 
 log = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ def brl(valor: float) -> str:
 
 async def _buscar_mysql(restaurante_id: int) -> dict:
     """Lê cardapio_web do MySQL e retorna dict com pratos, acompanhamentos e preços."""
-    dia = _DIA_SEMANA.get(date.today().weekday(), 0)
+    dia = _DIA_SEMANA.get(today_br().weekday(), 0)
 
     rows = await fetchall(
         """
@@ -91,7 +91,7 @@ async def get_cardapio_hoje(restaurante_id: int = 1) -> dict:
 
     dias = ["Segunda-feira", "Terça-feira", "Quarta-feira",
             "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
-    dia_nome = dias[min(date.today().weekday(), 6)]
+    dia_nome = dias[min(today_br().weekday(), 6)]
 
     return {
         "dia":             dia_nome,

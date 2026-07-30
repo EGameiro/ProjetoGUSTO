@@ -1,5 +1,5 @@
-from datetime import date, datetime
 from db import connection as db
+from services.tz import now_br, today_br
 
 
 async def buscar_nome_cliente(numero: str) -> str | None:
@@ -55,8 +55,8 @@ async def buscar_pedido_aberto(numero: str) -> dict | None:
 async def salvar_lote_convenio(pedidos: list[dict], numero: str, empresa_id: int) -> list[int]:
     """Salva todos os pedidos do lote convênio e retorna lista de IDs gerados."""
     ids = []
-    hoje = date.today()
-    hora = datetime.now().strftime("%H:%M:%S")
+    hoje = today_br()
+    hora = now_br().strftime("%H:%M:%S")
 
     for p in pedidos:
         pedido_id = await db.execute(
@@ -107,8 +107,8 @@ async def salvar_pedido_individual(sessao: dict, numero: str) -> int:
             None,
             None,
             numero,
-            date.today(),
-            datetime.now().strftime("%H:%M:%S"),
+            today_br(),
+            now_br().strftime("%H:%M:%S"),
             sessao.get("endereco"),
             sessao.get("hora_retirada"),
             None,

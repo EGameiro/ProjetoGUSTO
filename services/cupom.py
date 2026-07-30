@@ -3,7 +3,7 @@ Formata cupons de impressão para pedidos individuais e de convênio.
 Saída em texto puro (UTF-8) para impressora térmica de 42 colunas.
 """
 
-from datetime import datetime
+from services.tz import now_br
 
 LARGURA = 42
 SEP_SIMPLES = "─" * LARGURA
@@ -26,7 +26,7 @@ def montar_cupom_individual(pedido: dict, itens: list[dict]) -> str:
     pedido: linha da tabela `pedidos`
     itens:  lista de linhas da tabela `itens_pedido` (geralmente 1 item)
     """
-    agora = datetime.now().strftime("%d/%m  %H:%M")
+    agora = now_br().strftime("%d/%m  %H:%M")
     linhas = [
         _linha_kv(agora, "INDIVIDUAL"),
         SEP_SIMPLES,
@@ -73,7 +73,7 @@ def montar_cupom_convenio(pedido: dict, itens: list[dict], nome_empresa: str) ->
     itens:        lista de itens_pedido do lote
     nome_empresa: nome da empresa (de empresas_convenio)
     """
-    agora = datetime.now().strftime("%d/%m  %H:%M")
+    agora = now_br().strftime("%d/%m  %H:%M")
     hora_ent = pedido.get("hora_retirada") or pedido.get("horario_entrega") or "—"
 
     linhas = [

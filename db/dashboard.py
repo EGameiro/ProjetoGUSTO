@@ -1,10 +1,10 @@
-from datetime import date
 from db import connection as db
+from services.tz import today_br
 
 
 async def listar_pedidos_hoje() -> list[dict]:
     """Retorna todos os pedidos de hoje com seus itens (single JOIN query)."""
-    hoje = date.today().isoformat()
+    hoje = today_br().isoformat()
     rows = await db.fetchall(
         """
         SELECT p.id, p.tipo, p.numero_whatsapp, p.data_pedido, p.horario_pedido,
@@ -57,7 +57,7 @@ async def listar_pedidos_hoje() -> list[dict]:
 
 
 async def totais_hoje() -> dict:
-    hoje = date.today().isoformat()
+    hoje = today_br().isoformat()
     row = await db.fetchone(
         """
         SELECT
