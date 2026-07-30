@@ -273,6 +273,13 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
         if acomps_mencionados:
             mistura_alvo = (itens_aguardando_acomp[0].get("mistura") or "").lower()
             alvos = [i for i in sessao["itens"] if (i.get("mistura") or "").lower() == mistura_alvo] if mistura_alvo else itens_aguardando_acomp
+            _TAMANHOS_MAP = {"mini": "Mini", "normal": "Normal", "executiva": "Executiva"}
+            for tam_key, tam_val in _TAMANHOS_MAP.items():
+                if re.search(r'\b' + tam_key + r'\b', texto_lower):
+                    for item in alvos:
+                        if not item.get("tamanho"):
+                            item["tamanho"] = tam_val
+                    break
             for item in alvos:
                 if not item.get("acomp_1"):
                     item["acomp_1"] = acomps_mencionados[0]
