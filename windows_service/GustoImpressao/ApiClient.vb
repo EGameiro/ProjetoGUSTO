@@ -41,6 +41,8 @@ Public Class ApiClient
                 p.EmpresaId = GetInt(pedidoEl, "empresa_id")
                 p.NomeEmpresa = GetStr(pedidoEl, "nome_empresa")
                 p.FormaPgto = GetStr(pedidoEl, "forma_pgto")
+                p.DataPedido = GetStr(pedidoEl, "data_pedido")
+                p.HorarioPedido = GetStr(pedidoEl, "horario_pedido")
             End If
 
             Dim itensEl As JsonElement
@@ -93,6 +95,8 @@ Public Class PedidoImpressao
     Public Property EmpresaId As Integer
     Public Property NomeEmpresa As String = ""
     Public Property FormaPgto As String = ""
+    Public Property DataPedido As String = ""
+    Public Property HorarioPedido As String = ""
     Public Property Itens As New List(Of ItemImpressao)
 End Class
 

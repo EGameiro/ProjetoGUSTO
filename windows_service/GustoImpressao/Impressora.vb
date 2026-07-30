@@ -30,22 +30,32 @@ Public Class Impressora
             Dim indice As Integer = 0
 
             AddHandler doc.PrintPage, Sub(sender, e)
-                ' Fonte menor e sem anti-alias para impressora térmica
-                Dim fonte As New Font("Courier New", 10, FontStyle.Regular, GraphicsUnit.Point)
                 e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.SingleBitPerPixel
 
-                ' Começa direto na borda esquerda com margem mínima
+                Dim fonteNormal As New Font("Courier New", 10, FontStyle.Regular, GraphicsUnit.Point)
+                Dim fonteGrande As New Font("Courier New", 12, FontStyle.Bold, GraphicsUnit.Point)
+
                 Dim x As Single = e.PageBounds.Left + 5
                 Dim y As Single = e.PageBounds.Top + 5
-                Dim alturaLinha = fonte.GetHeight(e.Graphics)
                 Dim limiteInferior = e.PageBounds.Bottom - 5
-
                 Dim larguraUtil = e.PageBounds.Width - 10
 
                 While indice < linhas.Length
-                    Dim linha = linhas(indice)
+                    Dim linhaRaw = linhas(indice)
 
-                    ' Quebra a linha em partes que cabem na largura útil
+                    ' Detecta marcador de fonte grande
+                    Dim fonte As Font
+                    Dim linha As String
+                    If linhaRaw.StartsWith("|12|") Then
+                        fonte = fonteGrande
+                        linha = linhaRaw.Substring(4)
+                    Else
+                        fonte = fonteNormal
+                        linha = linhaRaw
+                    End If
+
+                    Dim alturaLinha = fonte.GetHeight(e.Graphics)
+
                     Dim partes As New List(Of String)
                     If String.IsNullOrEmpty(linha) Then
                         partes.Add("")
@@ -67,7 +77,8 @@ Public Class Impressora
                         y += alturaLinha
                         If y + alturaLinha > limiteInferior Then
                             e.HasMorePages = True
-                            fonte.Dispose()
+                            fonteNormal.Dispose()
+                            fonteGrande.Dispose()
                             Exit Sub
                         End If
                     Next
@@ -75,7 +86,8 @@ Public Class Impressora
                     indice += 1
                 End While
 
-                fonte.Dispose()
+                fonteNormal.Dispose()
+                fonteGrande.Dispose()
                 e.HasMorePages = False
             End Sub
 

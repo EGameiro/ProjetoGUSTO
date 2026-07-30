@@ -7,10 +7,19 @@ Public Module CupomBuilder
     Private ReadOnly SEP_DUPLO As String = New String("═"c, LARGURA)
 
     Public Function MontarCupomIndividual(pedido As PedidoImpressao) As String
-        Dim agora = DateTime.Now.ToString("dd/MM  HH:mm")
         Dim sb As New StringBuilder()
 
-        sb.AppendLine(LinhaKV(agora, "INDIVIDUAL"))
+        ' Linha 1: nome do restaurante em 12pt (marcador |12| interpretado pela Impressora)
+        sb.AppendLine("|12|Gusto Restaurante")
+
+        ' Linha 2: número do pedido, data e hora
+        Dim dataPedido = If(Not String.IsNullOrWhiteSpace(pedido.DataPedido),
+                            DateTime.Parse(pedido.DataPedido).ToString("dd/MM"),
+                            DateTime.Now.ToString("dd/MM"))
+        Dim horaPedido = If(Not String.IsNullOrWhiteSpace(pedido.HorarioPedido),
+                            pedido.HorarioPedido.Substring(0, Math.Min(5, pedido.HorarioPedido.Length)),
+                            DateTime.Now.ToString("HH:mm"))
+        sb.AppendLine($"Pedido n. {pedido.Id}   Data {dataPedido}   Hora: {horaPedido}")
         sb.AppendLine(SEP_SIMPLES)
 
         Dim fone = FormatarTelefone(pedido.NumeroWhatsapp)
