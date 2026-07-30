@@ -138,12 +138,12 @@ async def salvar_pedido_individual(sessao: dict, numero: str) -> int:
             )
         )
 
-    await upsert_cliente(numero, sessao)
+    await upsert_cliente(numero, sessao, sessao.get("restaurante_id", 1))
 
     return pedido_id
 
 
-async def upsert_cliente(numero: str, sessao: dict):
+async def upsert_cliente(numero: str, sessao: dict, restaurante_id: int = 1):
     existente = await db.fetchone(
         "SELECT id FROM clientes WHERE numero_whatsapp = %s", (numero,)
     )
@@ -166,8 +166,8 @@ async def upsert_cliente(numero: str, sessao: dict):
         await db.execute(
             """
             INSERT INTO clientes
-                (numero_whatsapp, nome, tipo_entrega_pref, endereco_padrao, ultima_interacao)
-            VALUES (%s, %s, %s, %s, NOW())
+                (numero_whatsapp, nome, tipo_entrega_pref, endereco_padrao, ultima_interacao, restaurante_id)
+            VALUES (%s, %s, %s, %s, NOW(), %s)
             """,
-            (numero, sessao.get("nome"), tipo_entrega, endereco)
+            (numero, sessao.get("nome"), tipo_entrega, endereco, restaurante_id)
         )
