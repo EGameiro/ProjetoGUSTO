@@ -25,12 +25,15 @@ def _parece_endereco(texto: str) -> bool:
 
 def _acomp_mencionado(acomp: str, texto: str) -> bool:
     """Verifica se um acompanhamento foi mencionado no texto.
-    Faz matching exato OU por palavra significativa (ex: 'maionese' bate 'Maionese E Salada').
+    Casa pelo nome completo OU pela primeira palavra significativa do acomp.
+    Ex: 'maionese' bate 'Maionese e Salada', mas 'salada' NÃO bate.
     """
     if acomp.lower() in texto:
         return True
-    for palavra in acomp.lower().split():
-        if len(palavra) >= 4 and re.search(r'\b' + re.escape(palavra) + r'\b', texto):
+    palavras_sig = [p for p in acomp.lower().split() if len(p) >= 4]
+    if palavras_sig:
+        primeira = palavras_sig[0]
+        if re.search(r'\b' + re.escape(primeira) + r'\b', texto):
             return True
     return False
 
