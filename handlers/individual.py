@@ -9,6 +9,20 @@ from db.pedidos import salvar_pedido_individual, buscar_nome_cliente, buscar_ped
 log = logging.getLogger(__name__)
 
 
+def _parece_endereco(texto: str) -> bool:
+    """Heurística para evitar guardar perguntas ou observações como endereço."""
+    t = texto.strip()
+    if not t or len(t) < 5:
+        return False
+    if "?" in t:
+        return False
+    _LOGRADOUROS = {"rua", "av", "avenida", "alameda", "travessa", "estrada",
+                    "rodovia", "rod", "praça", "pca", "viela", "beco"}
+    tem_numero = any(c.isdigit() for c in t)
+    tem_logradouro = any(p in t.lower().split() for p in _LOGRADOUROS)
+    return tem_numero or tem_logradouro
+
+
 def _acomp_mencionado(acomp: str, texto: str) -> bool:
     """Verifica se um acompanhamento foi mencionado no texto.
     Faz matching exato OU por palavra significativa (ex: 'maionese' bate 'Maionese E Salada').
@@ -259,7 +273,7 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
             for item in alvos:
                 if not item.get("acomp_1"):
                     item["acomp_1"] = acomps_mencionados[0]
-                elif len(acomps_mencionados) > 1 and not item.get("acomp_2"):
+                if len(acomps_mencionados) > 1 and not item.get("acomp_2"):
                     item["acomp_2"] = acomps_mencionados[1]
             faltando = _campos_faltando(sessao)
             if faltando:
@@ -278,7 +292,7 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
     if _nada_extraido(extraido):
         # Fallback: sessão aguardando endereço e extrator não reconheceu nenhum pedido
         # → tratar texto como endereço (ex: "Av das Notas 177")
-        if sessao.get("tipo_entrega") == "entrega" and not sessao.get("endereco"):
+        if sessao.get("tipo_entrega") == "entrega" and not sessao.get("endereco") and _parece_endereco(texto):
             sessao["endereco"] = texto.strip()
             faltando = _campos_faltando(sessao)
             if faltando:
@@ -296,7 +310,8 @@ async def _coletando(numero: str, sessao: dict, texto: str, restaurante_id: int 
         if (not sessao.get("tipo_entrega")
                 and sessao.get("pref_tipo_entrega") == "entrega"
                 and sessao.get("pref_endereco")
-                and not confirmou):
+                and not confirmou
+                and _parece_endereco(texto)):
             sessao["tipo_entrega"] = "entrega"
             sessao["endereco"] = texto.strip()
             faltando = _campos_faltando(sessao)
